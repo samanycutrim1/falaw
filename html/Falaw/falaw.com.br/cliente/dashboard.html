@@ -4290,7 +4290,7 @@ function _escRenderRows(rows, today) {
       const isSustOral   = a.tipo_audiencia === 'SUSTENTAÇÃO ORAL';
       const isPericia    = a.tipo_audiencia === 'PERÍCIA';
       const temMencaoPendente = (window._mencaoPendentes || []).some(m => m.audiencia_id === a.id);
-      const op = isPastDate && !isCancelada ? 'opacity:.72;' : '';
+      const op = isCancelada ? 'opacity:.5;' : isPastDate ? 'opacity:.72;' : '';
 
       const st   = state[a.id] || {};
       const sent = a.orientacao_enviada !== undefined ? !!a.orientacao_enviada : !!st.sent;
