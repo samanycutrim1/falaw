@@ -2641,6 +2641,19 @@ Ex: 0020123-64.2024.5.04.0382 - JOÃO SILVA (Deserção)"></textarea>
         </div>
       </div>
 
+      <!-- Painel de carregamento de HTML pronto -->
+      <div style="background:#fff;border:1px solid #e0e4f0;border-radius:6px;padding:24px 28px;margin-bottom:24px">
+        <h3 style="margin:0 0 18px 0;font-family:var(--f-mono);font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.5px;color:#0D2B5E">📤 Carregar Informativo em HTML</h3>
+        <div class="form-field">
+          <label>Arquivo HTML do informativo <span style="font-weight:400;color:var(--c-muted)">(carregue um .html já pronto para enviar pelo site, sem precisar gerar com IA)</span></label>
+          <input type="file" id="inf-html-file" accept=".html,.htm" />
+        </div>
+        <div style="display:flex;gap:10px;align-items:center;margin-top:16px;flex-wrap:wrap">
+          <button type="button" class="btn btn-primary" onclick="infCarregarHTMLArquivo()" id="inf-btn-carregar">📤 Carregar HTML</button>
+          <span id="inf-carregar-status" style="font-size:12px;color:var(--c-muted)"></span>
+        </div>
+      </div>
+
       <!-- Área de preview + envio -->
       <div id="inf-result-area" style="display:none">
 
@@ -8685,6 +8698,35 @@ async function _infBuildHeroBase64(d) {
   } finally {
     document.body.removeChild(el);
   }
+}
+
+function infCarregarHTMLArquivo() {
+  const fileEl = document.getElementById('inf-html-file');
+  const status = document.getElementById('inf-carregar-status');
+  const file   = fileEl.files[0];
+  if (!file) { showToast('Selecione um arquivo HTML.'); return; }
+
+  const reader = new FileReader();
+  reader.onload = (e) => {
+    _infCurrentHTML = String(e.target.result || '');
+    _infCurrentData = null;
+
+    const frame = document.getElementById('inf-preview-frame');
+    frame.srcdoc = _infCurrentHTML;
+    frame.style.minHeight = '700px';
+
+    if (!document.getElementById('inf-email-subject').value.trim()) {
+      document.getElementById('inf-email-subject').value = file.name.replace(/\.(html?|htm)$/i, '');
+    }
+
+    document.getElementById('inf-result-area').style.display = '';
+    document.getElementById('inf-btn-salvar').style.display = '';
+    status.textContent = '✓ HTML carregado.';
+    showToast('✓ Informativo carregado a partir do arquivo.');
+    document.getElementById('inf-result-area').scrollIntoView({ behavior: 'smooth', block: 'start' });
+  };
+  reader.onerror = () => showToast('Erro ao ler o arquivo.');
+  reader.readAsText(file, 'utf-8');
 }
 
 function infCopiarHTML() {
