@@ -2842,7 +2842,7 @@ async function salvarTestemunhas(audId) {
   try {
     const r = await fetch(`${sbUrl}/rest/v1/pauta_audiencias?id=eq.${encodeURIComponent(audId)}`, {
       method: 'PATCH',
-      headers: { 'apikey': sbKey, 'Authorization': `Bearer ${sbKey}`, 'Content-Type': 'application/json', 'Prefer': 'return=minimal' },
+      headers: { 'apikey': sbKey, 'Authorization': `Bearer ${sbKey}`, 'Content-Type': 'application/json', 'Prefer': 'return=minimal', 'X-Client-App': 'cliente' },
       body: JSON.stringify({ testemunhas: valor || null })
     });
     if (!r.ok) throw new Error(`HTTP ${r.status}`);
