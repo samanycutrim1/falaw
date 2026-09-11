@@ -3294,7 +3294,7 @@ let _sbClient = null;
 function getSB() {
   const url = sbUrl(), key = sbKey();
   if (!url || !key) return null;
-  if (!_sbClient) _sbClient = supabase.createClient(url, key);
+  if (!_sbClient) _sbClient = supabase.createClient(url, key, { global: { headers: { 'X-Client-App': 'admin' } } });
   return _sbClient;
 }
 function sbReset() { _sbClient = null; }
@@ -5702,7 +5702,7 @@ function openMemberModal(id) {
         try {
           const { sbUrl, sbKey } = getSbCreds();
           if (!sbUrl || !sbKey) return;
-          const sb = supabase.createClient(sbUrl, sbKey);
+          const sb = supabase.createClient(sbUrl, sbKey, { global: { headers: { 'X-Client-App': 'admin' } } });
           const { data } = await sb.from('equipe').select('celular,callmebot_apikey').eq('id', m.id).limit(1);
           const row = data && data[0];
           if (!row) return;
@@ -5766,7 +5766,7 @@ function saveMember() {
   const { sbUrl, sbKey } = getSbCreds();
   if (sbUrl && sbKey) {
     try {
-      const sb = supabase.createClient(sbUrl, sbKey);
+      const sb = supabase.createClient(sbUrl, sbKey, { global: { headers: { 'X-Client-App': 'admin' } } });
       const mid = id || members.find(m => m.name === name && m.email === email)?.id || '';
       sb.from('equipe').upsert({ id: mid, nome: name, sigla: sigla || null, email, celular, cargo: role, callmebot_apikey: callmebotApikey || null }).then(({ error }) => {
         if (error) console.warn('equipe upsert:', error.message);
@@ -5787,7 +5787,7 @@ async function deleteMember(id) {
   renderEquipe();
   const { sbUrl, sbKey } = getSbCreds();
   if (sbUrl && sbKey) {
-    try { const sb = supabase.createClient(sbUrl, sbKey); await sb.from('equipe').delete().eq('id', id); }
+    try { const sb = supabase.createClient(sbUrl, sbKey, { global: { headers: { 'X-Client-App': 'admin' } } }); await sb.from('equipe').delete().eq('id', id); }
     catch(e) { console.warn('equipe delete:', e.message); }
   }
   showToast('Salvando no GitHub…');
@@ -7816,7 +7816,7 @@ async function loadCorrespondentes() {
   let list = [];
   if (sbUrl && sbKey) {
     try {
-      const sb = supabase.createClient(sbUrl, sbKey);
+      const sb = supabase.createClient(sbUrl, sbKey, { global: { headers: { 'X-Client-App': 'admin' } } });
       const { data } = await sb.from('correspondentes').select('*').order('nome', { ascending: true });
       if (data) { list = data; saveCorrLocal(list); }
     } catch(e) { list = getCorrLocal(); }
@@ -7960,7 +7960,7 @@ async function saveCorr() {
   const { sbUrl, sbKey } = getSbCreds();
   if (sbUrl && sbKey) {
     try {
-      const sb = supabase.createClient(sbUrl, sbKey);
+      const sb = supabase.createClient(sbUrl, sbKey, { global: { headers: { 'X-Client-App': 'admin' } } });
       const { error } = await sb.from('correspondentes').upsert(rec);
       if (error) { showToast('Erro: ' + error.message); return; }
     } catch(e) { showToast('Erro: ' + e.message); return; }
@@ -7980,7 +7980,7 @@ async function deleteCorr() {
   const { sbUrl, sbKey } = getSbCreds();
   if (sbUrl && sbKey) {
     try {
-      const sb = supabase.createClient(sbUrl, sbKey);
+      const sb = supabase.createClient(sbUrl, sbKey, { global: { headers: { 'X-Client-App': 'admin' } } });
       await sb.from('correspondentes').delete().eq('id', id);
     } catch(e) { console.warn(e.message); }
   }
@@ -8089,7 +8089,7 @@ async function _cliPopulateAliasOptions() {
   try {
     const { sbUrl, sbKey } = getSbCreds();
     if (sbUrl && sbKey) {
-      const sb = supabase.createClient(sbUrl, sbKey);
+      const sb = supabase.createClient(sbUrl, sbKey, { global: { headers: { 'X-Client-App': 'admin' } } });
       const { data } = await sb.from('pauta_audiencias').select('reclamada');
       opts = [...new Set((data || []).map(r => _audExtractCliente(r.reclamada)).filter(Boolean))].sort();
     }
@@ -8994,7 +8994,7 @@ async function openEnviarPautaModal() {
   _pautaDestCorrespondentes = [];
   if (sbUrl && sbKey) {
     try {
-      const sb = supabase.createClient(sbUrl, sbKey);
+      const sb = supabase.createClient(sbUrl, sbKey, { global: { headers: { 'X-Client-App': 'admin' } } });
       const [cliRes, corrRes] = await Promise.all([
         sb.from('clients').select('id,name,company,email,notify_email,code,aliases').order('company', { ascending: true }),
         sb.from('correspondentes').select('*').order('nome', { ascending: true })
@@ -9093,7 +9093,7 @@ async function sendEnviarPauta() {
   try {
     const { sbUrl, sbKey } = getSbCreds();
     if (sbUrl && sbKey) {
-      const sb = supabase.createClient(sbUrl, sbKey);
+      const sb = supabase.createClient(sbUrl, sbKey, { global: { headers: { 'X-Client-App': 'admin' } } });
       const today = new Date().toISOString().slice(0,10);
       let q = sb.from('pauta_audiencias').select('*').neq('status','cancelada').order('data_audiencia').order('horario');
       if (periodoDE)  q = q.gte('data_audiencia', periodoDE);
@@ -9153,7 +9153,7 @@ async function sendEnviarPauta() {
     try {
       const { sbUrl, sbKey } = getSbCreds();
       if (sbUrl && sbKey) {
-        const sb = supabase.createClient(sbUrl, sbKey);
+        const sb = supabase.createClient(sbUrl, sbKey, { global: { headers: { 'X-Client-App': 'admin' } } });
         await sb.from('pauta_audiencias')
           .update({ pauta_manual_enviada_at: new Date().toISOString() })
           .in('id', [...idsComunicados]);
@@ -9451,7 +9451,7 @@ async function notifyClientsPauta() {
   let clients = [];
   if (sbUrl && sbKey) {
     try {
-      const sb = supabase.createClient(sbUrl, sbKey);
+      const sb = supabase.createClient(sbUrl, sbKey, { global: { headers: { 'X-Client-App': 'admin' } } });
       const { data } = await sb.from('clients').select('id,name,company,email,notify_email,code,aliases').order('company', { ascending: true });
       if (data) clients = data.map(c => ({ ...c, notifyEmail: c.notify_email || c.email }));
     } catch(e) { showToast('Erro ao buscar clientes: ' + e.message); return; }
@@ -15094,7 +15094,7 @@ async function _mencaoRegistrar(audienciaId, msg, autor) {
   const { sbUrl, sbKey } = getSbCreds();
   if (!sbUrl || !sbKey) return;
   try {
-    const sb = supabase.createClient(sbUrl, sbKey);
+    const sb = supabase.createClient(sbUrl, sbKey, { global: { headers: { 'X-Client-App': 'admin' } } });
     await sb.from('mencoes').insert(nomes.map(n => ({ audiencia_id: audienciaId, mencionado: n, autor, texto: msg })));
     _mencaoAtualizarBadge();
   } catch(e) { console.warn('mencao insert:', e.message); }
@@ -15107,7 +15107,7 @@ async function _mencaoRemoverPorTexto(audienciaId, texto) {
   const { sbUrl, sbKey } = getSbCreds();
   if (!sbUrl || !sbKey) return;
   try {
-    const sb = supabase.createClient(sbUrl, sbKey);
+    const sb = supabase.createClient(sbUrl, sbKey, { global: { headers: { 'X-Client-App': 'admin' } } });
     const { error } = await sb.from('mencoes').delete().eq('audiencia_id', audienciaId).eq('texto', texto);
     if (error) throw error;
   } catch(e) { console.warn('mencao delete:', e.message); }
@@ -15129,7 +15129,7 @@ async function _mencaoCarregarPendentes() {
   const { sbUrl, sbKey } = getSbCreds();
   if (!sbUrl || !sbKey) return [];
   try {
-    const sb = supabase.createClient(sbUrl, sbKey);
+    const sb = supabase.createClient(sbUrl, sbKey, { global: { headers: { 'X-Client-App': 'admin' } } });
     const { data } = await sb.from('mencoes').select('*').is('lida_at', null).order('created_at', { ascending: false }).limit(50);
     return data || [];
   } catch(e) { return []; }
@@ -15226,7 +15226,7 @@ async function _mencaoIrPara(audienciaId) {
   const { sbUrl, sbKey } = getSbCreds();
   if (!sbUrl || !sbKey) return;
   try {
-    const sb = supabase.createClient(sbUrl, sbKey);
+    const sb = supabase.createClient(sbUrl, sbKey, { global: { headers: { 'X-Client-App': 'admin' } } });
     const { data } = await sb.from('pauta_audiencias').select('data_audiencia').eq('id', audienciaId).maybeSingle();
     if (!data || !data.data_audiencia) { showToast('Audiência não encontrada.'); return; }
     ['aud-filter-mes','aud-filter-dia','aud-filter-busca'].forEach(id => {
@@ -15249,7 +15249,7 @@ async function _mencaoMarcarLida(id) {
   const { sbUrl, sbKey } = getSbCreds();
   if (!sbUrl || !sbKey) return;
   try {
-    const sb = supabase.createClient(sbUrl, sbKey);
+    const sb = supabase.createClient(sbUrl, sbKey, { global: { headers: { 'X-Client-App': 'admin' } } });
     const { error } = await sb.from('mencoes').update({ lida_at: new Date().toISOString() }).eq('id', id);
     if (error) throw error;
   } catch(e) { showToast('Erro: ' + e.message); return; }
@@ -15300,7 +15300,7 @@ async function _audObsPersist(id, obs) {
   _audObsCache[id] = obs;
   const { sbUrl, sbKey } = getSbCreds();
   if (sbUrl && sbKey) {
-    const sb = supabase.createClient(sbUrl, sbKey);
+    const sb = supabase.createClient(sbUrl, sbKey, { global: { headers: { 'X-Client-App': 'admin' } } });
     const { error } = await sb.from('pauta_audiencias').update({ orientacao: obs, updated_at: new Date().toISOString() }).eq('id', id);
     if (error) throw error;
   } else {
@@ -15567,7 +15567,7 @@ async function _audRenderLastSync(_sbUrl, _sbKey) {
   const el = document.getElementById('aud-last-sync');
   if (!el || !_sbUrl || !_sbKey) return;
   try {
-    const sb = supabase.createClient(_sbUrl, _sbKey);
+    const sb = supabase.createClient(_sbUrl, _sbKey, { global: { headers: { 'X-Client-App': 'admin' } } });
     const { data, error } = await sb.from('pauta_sync_log')
       .select('executado_em,salvas,canceladas,sucesso,erro')
       .order('executado_em', { ascending: false })
@@ -15644,7 +15644,7 @@ async function _audRenderLastSyncProjuris(_sbUrl, _sbKey) {
   const el = document.getElementById('aud-last-sync-projuris');
   if (!el || !_sbUrl || !_sbKey) return;
   try {
-    const sb = supabase.createClient(_sbUrl, _sbKey);
+    const sb = supabase.createClient(_sbUrl, _sbKey, { global: { headers: { 'X-Client-App': 'admin' } } });
     const { data, error } = await sb.from('sync_log')
       .select('synced_at,count')
       .eq('source', 'projuris-adv')
@@ -15679,7 +15679,7 @@ async function _audRenderCanceladasAlert(_sbUrl, _sbKey) {
   const cutoffStr = cutoff.toISOString().slice(0, 10);
   if (_sbUrl && _sbKey) {
     try {
-      const sb = supabase.createClient(_sbUrl, _sbKey);
+      const sb = supabase.createClient(_sbUrl, _sbKey, { global: { headers: { 'X-Client-App': 'admin' } } });
       const { data } = await sb.from('pauta_audiencias')
         .select('id,data_audiencia,horario,tipo_audiencia,processo,reclamante,reclamada,vara')
         .in('status', ['cancelada', 'cancelado_pje'])
@@ -15777,7 +15777,7 @@ async function loadAudiencias(silent) {
   let items = [];
   if (_sbUrl && _sbKey) {
     try {
-      const sb = supabase.createClient(_sbUrl, _sbKey);
+      const sb = supabase.createClient(_sbUrl, _sbKey, { global: { headers: { 'X-Client-App': 'admin' } } });
       let q = sb.from('pauta_audiencias').select('*')
         .order('data_audiencia', { ascending: true })
         .order('horario',       { ascending: true });
@@ -16052,7 +16052,7 @@ async function editAudiencia(id) {
   let a = null;
   if (sbUrl && sbKey) {
     try {
-      const sb = supabase.createClient(sbUrl, sbKey);
+      const sb = supabase.createClient(sbUrl, sbKey, { global: { headers: { 'X-Client-App': 'admin' } } });
       const { data } = await sb.from('pauta_audiencias').select('*').eq('id', id).single();
       if (data) a = data;
     } catch(e) {}
@@ -16155,7 +16155,7 @@ async function saveAudiencia() {
   const { sbUrl, sbKey } = getSbCreds();
   if (sbUrl && sbKey) {
     try {
-      const sb = supabase.createClient(sbUrl, sbKey);
+      const sb = supabase.createClient(sbUrl, sbKey, { global: { headers: { 'X-Client-App': 'admin' } } });
       const { error } = await sb.from('pauta_audiencias').upsert(row);
       if (error) throw error;
 
@@ -16190,7 +16190,7 @@ async function confirmarCancelamentoPje(id) {
   const { sbUrl, sbKey } = getSbCreds();
   if (sbUrl && sbKey) {
     try {
-      const sb = supabase.createClient(sbUrl, sbKey);
+      const sb = supabase.createClient(sbUrl, sbKey, { global: { headers: { 'X-Client-App': 'admin' } } });
       const { error } = await sb.from('pauta_audiencias')
         .update({ status: 'cancelada', updated_at: new Date().toISOString() })
         .eq('id', id);
@@ -16211,7 +16211,7 @@ async function deleteAudiencia(id) {
   const { sbUrl, sbKey } = getSbCreds();
   if (sbUrl && sbKey) {
     try {
-      const sb = supabase.createClient(sbUrl, sbKey);
+      const sb = supabase.createClient(sbUrl, sbKey, { global: { headers: { 'X-Client-App': 'admin' } } });
       await sb.from('pauta_audiencias').delete().eq('id', id);
     } catch(e) { showToast('Erro ao excluir: ' + e.message); return; }
   } else {
@@ -16229,7 +16229,7 @@ async function _audLimparCorr(id) {
   const { sbUrl, sbKey } = getSbCreds();
   if (!sbUrl || !sbKey) { showToast('Configuração Supabase ausente.'); return; }
   try {
-    const sb = supabase.createClient(sbUrl, sbKey);
+    const sb = supabase.createClient(sbUrl, sbKey, { global: { headers: { 'X-Client-App': 'admin' } } });
     const { error } = await sb.from('pauta_audiencias').update({
       advogado: '', dados_preposto: '', valor_advogado: null, valor_preposto: null
     }).eq('id', id);
@@ -16246,7 +16246,7 @@ async function _audLimparValor(id, tipo) {
   const { sbUrl, sbKey } = getSbCreds();
   if (!sbUrl || !sbKey) { showToast('Configuração Supabase ausente.'); return; }
   try {
-    const sb = supabase.createClient(sbUrl, sbKey);
+    const sb = supabase.createClient(sbUrl, sbKey, { global: { headers: { 'X-Client-App': 'admin' } } });
     const { error } = await sb.from('pauta_audiencias').update({ [campo]: null }).eq('id', id);
     if (error) throw error;
     showToast('Valor removido.');
@@ -16323,7 +16323,7 @@ async function loadFinanceiro() {
   let rows = [];
   if (sbUrl && sbKey) {
     try {
-      const sb = supabase.createClient(sbUrl, sbKey);
+      const sb = supabase.createClient(sbUrl, sbKey, { global: { headers: { 'X-Client-App': 'admin' } } });
       const { data, error } = await sb.from('pauta_audiencias')
         .select('id,data_audiencia,processo,cliente,advogado,dados_preposto,valor_advogado,valor_preposto')
         .or('valor_advogado.not.is.null,valor_preposto.not.is.null')
@@ -16890,7 +16890,7 @@ async function audImportExcel(inputEl) {
 
     const { sbUrl, sbKey } = getSbCreds();
     if (sbUrl && sbKey) {
-      const sb = supabase.createClient(sbUrl, sbKey);
+      const sb = supabase.createClient(sbUrl, sbKey, { global: { headers: { 'X-Client-App': 'admin' } } });
       try {
         const { data: exist } = await sb.from('pauta_audiencias').select('id,orientacao').in('id', rows.map(r => r.id));
         (exist || []).forEach(e => { const r = rows.find(x => x.id === e.id); if (r) _mergeOrient(e.orientacao, r); });
@@ -16921,7 +16921,7 @@ async function abrirModalExcelAdmin() {
   let allRows = [];
   if (sbUrl && sbKey) {
     try {
-      const sb = supabase.createClient(sbUrl, sbKey);
+      const sb = supabase.createClient(sbUrl, sbKey, { global: { headers: { 'X-Client-App': 'admin' } } });
       const { data } = await sb.from('pauta_audiencias').select('cliente,reclamada').order('data_audiencia');
       allRows = data || [];
     } catch(e) { console.warn('excel admin clientes:', e.message); }
@@ -17039,7 +17039,7 @@ async function audExportExcel() {
     const { sbUrl, sbKey } = getSbCreds();
     let rows = [];
     if (sbUrl && sbKey) {
-      const sb = supabase.createClient(sbUrl, sbKey);
+      const sb = supabase.createClient(sbUrl, sbKey, { global: { headers: { 'X-Client-App': 'admin' } } });
       let q = sb.from('pauta_audiencias').select('*').order('data_audiencia', { ascending: true });
       if (de)  q = q.gte('data_audiencia', de);
       if (ate) q = q.lte('data_audiencia', ate);
