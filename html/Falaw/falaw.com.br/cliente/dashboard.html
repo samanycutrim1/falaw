@@ -912,6 +912,24 @@
           </div>
         </div><!-- /pauta-search-bar -->
 
+        <!-- Filtro de período e busca (visível apenas para cliente) -->
+        <div id="pauta-cli-filter-bar" style="display:none;background:#f9fafb;border:1px solid #e5e7eb;border-radius:6px;padding:14px 16px;margin-bottom:16px">
+          <div style="display:flex;flex-wrap:wrap;gap:8px;align-items:center">
+            <span style="font-family:monospace;font-size:9px;font-weight:700;letter-spacing:.08em;text-transform:uppercase;color:#9CA3AF;white-space:nowrap">Período:</span>
+            <button type="button" id="cli-per-anterior" onclick="_cliSetPeriodo('anterior')" style="font-family:monospace;font-size:9px;letter-spacing:.06em;text-transform:uppercase;padding:4px 10px;border:1px solid #d1d5db;border-radius:3px;background:#fff;color:#374151;cursor:pointer">Mês anterior</button>
+            <button type="button" id="cli-per-mes"      onclick="_cliSetPeriodo('mes')"      style="font-family:monospace;font-size:9px;letter-spacing:.06em;text-transform:uppercase;padding:4px 10px;border:1px solid #d1d5db;border-radius:3px;background:#fff;color:#374151;cursor:pointer">Este mês</button>
+            <button type="button" id="cli-per-prox"     onclick="_cliSetPeriodo('prox')"     style="font-family:monospace;font-size:9px;letter-spacing:.06em;text-transform:uppercase;padding:4px 10px;border:1px solid #d1d5db;border-radius:3px;background:#fff;color:#374151;cursor:pointer">Próx. mês</button>
+            <button type="button" id="cli-per-custom"   onclick="_cliSetPeriodo('custom')"   style="font-family:monospace;font-size:9px;letter-spacing:.06em;text-transform:uppercase;padding:4px 10px;border:1px solid #d1d5db;border-radius:3px;background:#fff;color:#374151;cursor:pointer">Personalizado</button>
+            <div id="cli-per-custom-inputs" style="display:none;gap:6px;align-items:center">
+              <input id="cli-data-de"  type="date" onchange="_cliApplyFilters()" style="padding:4px 8px;border:1px solid #d1d5db;border-radius:3px;font-size:11px;font-family:monospace;outline:none" />
+              <span style="font-family:monospace;font-size:9px;color:#9CA3AF">até</span>
+              <input id="cli-data-ate" type="date" onchange="_cliApplyFilters()" style="padding:4px 8px;border:1px solid #d1d5db;border-radius:3px;font-size:11px;font-family:monospace;outline:none" />
+            </div>
+            <input id="cli-busca" type="text" placeholder="Buscar por nome, nº do processo…" oninput="_cliApplyFilters()" style="flex:1;min-width:180px;padding:7px 10px;border:1px solid #e5e7eb;border-radius:4px;font-size:12px;font-family:monospace;outline:none" />
+            <button type="button" onclick="_cliLimparFiltros()" style="font-family:monospace;font-size:10px;letter-spacing:.08em;text-transform:uppercase;background:none;border:1px solid #d1d5db;border-radius:4px;padding:8px 12px;color:#6B7280;cursor:pointer;white-space:nowrap">✕ Limpar</button>
+          </div>
+        </div>
+
         <div id="pauta-list" style="margin-top:8px"></div>
 
       </div>
@@ -4482,6 +4500,85 @@ function _audMatchesAliases(a, aliasKeySet) {
   return false;
 }
 
+function _cliSetPeriodo(tipo) {
+  const today = new Date();
+  const pad = n => String(n).padStart(2,'0');
+  const fmt = d => `${d.getFullYear()}-${pad(d.getMonth()+1)}-${pad(d.getDate())}`;
+  let de = '', ate = '', showCustom = false;
+  if (tipo === 'anterior') {
+    de = fmt(new Date(today.getFullYear(), today.getMonth()-1, 1));
+    ate = fmt(new Date(today.getFullYear(), today.getMonth(), 0));
+  } else if (tipo === 'mes') {
+    de = fmt(new Date(today.getFullYear(), today.getMonth(), 1));
+    ate = fmt(new Date(today.getFullYear(), today.getMonth()+1, 0));
+  } else if (tipo === 'prox') {
+    de = fmt(new Date(today.getFullYear(), today.getMonth()+1, 1));
+    ate = fmt(new Date(today.getFullYear(), today.getMonth()+2, 0));
+  } else if (tipo === 'custom') {
+    showCustom = true;
+  }
+  const deEl = document.getElementById('cli-data-de');
+  const ateEl = document.getElementById('cli-data-ate');
+  const ci = document.getElementById('cli-per-custom-inputs');
+  if (deEl && !showCustom) deEl.value = de;
+  if (ateEl && !showCustom) ateEl.value = ate;
+  if (ci) ci.style.display = showCustom ? 'flex' : 'none';
+  ['anterior','mes','prox','custom'].forEach(k => {
+    const b = document.getElementById('cli-per-'+k);
+    if (!b) return;
+    const active = k === tipo;
+    b.style.background = active ? '#0D2B5E' : '#fff';
+    b.style.color = active ? '#fff' : '#374151';
+    b.style.borderColor = active ? '#0D2B5E' : '#d1d5db';
+  });
+  window._cliPeriodo = tipo;
+  _cliApplyFilters();
+}
+
+function _cliApplyFilters() {
+  const rows    = window._escRows  || [];
+  const today   = window._escToday || new Date().toISOString().slice(0,10);
+  const periodo = window._cliPeriodo || '';
+  const fDe  = document.getElementById('cli-data-de')?.value  || '';
+  const fAte = document.getElementById('cli-data-ate')?.value || '';
+  const q    = (document.getElementById('cli-busca')?.value   || '').trim().toLowerCase();
+
+  let filtered;
+  if (periodo && (fDe || fAte)) {
+    filtered = rows.filter(r => {
+      const d = r.data_audiencia || '';
+      if (fDe && d < fDe) return false;
+      if (fAte && d > fAte) return false;
+      return true;
+    });
+  } else {
+    filtered = rows.filter(r => (r.data_audiencia||'') >= today);
+    if (!filtered.length) filtered = rows.slice();
+  }
+
+  if (q) {
+    filtered = filtered.filter(r =>
+      (r.reclamante||'').toLowerCase().includes(q) ||
+      (r.processo||'').toLowerCase().includes(q)
+    );
+  }
+
+  _clientRenderRows(filtered);
+}
+
+function _cliLimparFiltros() {
+  window._cliPeriodo = '';
+  const busca = document.getElementById('cli-busca'); if (busca) busca.value = '';
+  const deEl  = document.getElementById('cli-data-de');  if (deEl)  deEl.value  = '';
+  const ateEl = document.getElementById('cli-data-ate'); if (ateEl) ateEl.value = '';
+  const ci    = document.getElementById('cli-per-custom-inputs'); if (ci) ci.style.display = 'none';
+  ['anterior','mes','prox','custom'].forEach(k => {
+    const b = document.getElementById('cli-per-'+k);
+    if (b) { b.style.background = '#fff'; b.style.color = '#374151'; b.style.borderColor = '#d1d5db'; }
+  });
+  _cliApplyFilters();
+}
+
 // Render client rows into pauta-list (client-specific, simpler than _escRenderRows)
 function _clientRenderRows(rows) {
   const el = document.getElementById('pauta-list');
@@ -4638,6 +4735,9 @@ async function loadPautaCliente(company, aliases) {
   window._escCalMonth = +today.slice(5,7) - 1;
   window._clientRenderFn = _clientRenderRows;
 
+  const filterBar = document.getElementById('pauta-cli-filter-bar');
+  if (filterBar) filterBar.style.display = '';
+
   // Navega para o mês da audiência mais próxima futura
   const futuras = rows.filter(r => (r.data_audiencia||'') >= today);
   const verPass = document.getElementById('pauta-ver-passadas');
@@ -4648,7 +4748,7 @@ async function loadPautaCliente(company, aliases) {
     window._escCalMonth = +ancora.data_audiencia.slice(5,7) - 1;
   }
   _escRenderCalGrid();
-  _clientRenderRows(futuras.length ? futuras : rows);
+  _cliApplyFilters();
 }
 
 /* ─── INIT ──────────────────────────────────────────── */
