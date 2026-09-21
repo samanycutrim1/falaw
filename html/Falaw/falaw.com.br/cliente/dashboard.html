@@ -4638,9 +4638,6 @@ async function loadPautaCliente(company, aliases) {
   window._escCalMonth = +today.slice(5,7) - 1;
   window._clientRenderFn = _clientRenderRows;
 
-  const calBar = document.getElementById('pauta-cal-bar');
-  if (calBar) calBar.style.display = '';
-
   // Navega para o mês da audiência mais próxima futura
   const futuras = rows.filter(r => (r.data_audiencia||'') >= today);
   const verPass = document.getElementById('pauta-ver-passadas');
