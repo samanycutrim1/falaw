@@ -1814,15 +1814,6 @@
           <p id="aud-last-sync" style="font-size:11px;font-family:var(--f-mono);letter-spacing:.04em;margin:4px 0 0;color:var(--c-muted)"></p>
           <p id="aud-last-sync-projuris" style="font-size:11px;font-family:var(--f-mono);letter-spacing:.04em;margin:2px 0 0;color:var(--c-muted)"></p>
         </div>
-        <div style="position:relative">
-          <button type="button" class="btn btn-ghost" onclick="_mencaoTogglePainel()">🔔 Menções <span id="mencao-badge" style="display:none;background:#DC2626;color:#fff;border-radius:10px;padding:1px 6px;font-size:10px;font-weight:700;margin-left:4px">0</span></button>
-          <div id="mencao-painel" style="display:none;position:absolute;right:0;top:calc(100% + 4px);z-index:300;width:480px;background:#fff;border:1px solid var(--c-divider);border-radius:4px;box-shadow:0 8px 24px rgba(0,0,0,.15)">
-            <div style="display:flex;align-items:stretch">
-              <div id="mencao-roster" style="width:180px;flex-shrink:0;border-right:1px solid var(--c-divider);max-height:360px;overflow-y:auto"></div>
-              <div id="mencao-painel-body" style="flex:1;min-width:0;max-height:360px;overflow-y:auto"></div>
-            </div>
-          </div>
-        </div>
       </div>
       <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center;padding-bottom:16px;margin-bottom:16px;border-bottom:1px solid var(--c-divider)">
         <label class="btn btn-ghost" style="cursor:pointer" title="Importar planilha Excel (.xlsx)">
@@ -3001,6 +2992,29 @@ Ex: 0020123-64.2024.5.04.0382 - JOÃO SILVA (Deserção)"></textarea>
     </section>
 
   </div>
+
+<style>
+/* Balão flutuante de menções (canto inferior direito, acompanha a rolagem) */
+#mencao-wrap { position: fixed; right: 28px; bottom: 28px; z-index: 1150; }
+#mencao-fab { width: 58px; height: 58px; border-radius: 50%; border: none; background: #0D2B5E; box-shadow: 0 6px 24px rgba(0,0,0,.35); cursor: pointer; display: flex; align-items: center; justify-content: center; position: relative; transition: transform .2s ease; padding: 0; }
+#mencao-fab:hover { transform: scale(1.1); }
+#mencao-badge { position: absolute; top: -3px; right: -3px; min-width: 20px; height: 20px; padding: 0 5px; box-sizing: border-box; border-radius: 10px; background: #DC2626; color: #fff; border: 2px solid #fff; font-size: 10px; font-weight: 700; font-family: Arial, sans-serif; display: flex; align-items: center; justify-content: center; line-height: 1; }
+#mencao-painel { position: absolute; right: 0; bottom: calc(100% + 12px); width: 480px; max-width: calc(100vw - 32px); background: #fff; border: 1px solid #e5e7eb; border-radius: 8px; box-shadow: 0 8px 28px rgba(0,0,0,.2); overflow: hidden; }
+#mencao-painel-head { background: #0D2B5E; color: #fff; padding: 9px 14px; font-family: monospace; font-size: 11px; letter-spacing: .06em; text-transform: uppercase; font-weight: 700; display: flex; justify-content: space-between; align-items: center; }
+#mencao-painel-head button { background: none; border: none; color: #fff; font-size: 16px; cursor: pointer; line-height: 1; padding: 0 2px; }
+@media (max-width: 600px) { #mencao-wrap { right: 16px; bottom: 16px; } #mencao-roster { width: 130px !important; } }
+</style>
+<!-- Balão flutuante de menções -->
+<div id="mencao-wrap">
+  <div id="mencao-painel" style="display:none">
+    <div id="mencao-painel-head"><span>🔔 Menções pendentes</span><button type="button" onclick="_mencaoTogglePainel()" title="Fechar">×</button></div>
+    <div style="display:flex;align-items:stretch">
+      <div id="mencao-roster" style="width:180px;flex-shrink:0;border-right:1px solid var(--c-divider);max-height:360px;overflow-y:auto"></div>
+      <div id="mencao-painel-body" style="flex:1;min-width:0;max-height:360px;overflow-y:auto"></div>
+    </div>
+  </div>
+  <button type="button" id="mencao-fab" onclick="_mencaoTogglePainel()" title="Menções" aria-label="Menções"><svg width="28" height="28" viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="M12 3C6.98 3 3 6.58 3 11c0 2.13.93 4.06 2.45 5.5L4.6 20.4c-.1.45.36.81.77.6l3.9-1.95c.85.23 1.76.35 2.73.35 5.02 0 9-3.58 9-8s-3.98-8.4-9-8.4z" fill="#fff"/><text x="12" y="14.6" text-anchor="middle" font-size="9" font-weight="700" font-family="Arial,sans-serif" fill="#0D2B5E">@</text></svg><span id="mencao-badge" style="display:none">0</span></button>
+</div>
 </div>
 
 <!-- ══════════════════════════════════════
@@ -3825,6 +3839,7 @@ async function doLogin() {
         _savePersistIfChecked(role, true);
         document.getElementById('login-screen').style.display = 'none';
         document.getElementById('admin-shell').style.display = 'block';
+    _mencaoIniciarBalao();
         errEl.style.display = 'none';
         applyRoleRestrictions();
         seedData();
@@ -3855,6 +3870,7 @@ async function doLogin() {
     _savePersistIfChecked('restrito', false);
     document.getElementById('login-screen').style.display = 'none';
     document.getElementById('admin-shell').style.display = 'block';
+    _mencaoIniciarBalao();
     errEl.style.display = 'none';
     applyRoleRestrictions();
     seedData();
@@ -3886,6 +3902,7 @@ async function doLogin() {
     _savePersistIfChecked(hashRole, false);
     document.getElementById('login-screen').style.display = 'none';
     document.getElementById('admin-shell').style.display = 'block';
+    _mencaoIniciarBalao();
     errEl.style.display = 'none';
     applyRoleRestrictions();
     seedData();
@@ -4036,6 +4053,7 @@ function _autoRestoreSession() {
   if (isSupa) sessionStorage.setItem('fa_admin_supabase_auth', '1');
   document.getElementById('login-screen').style.display = 'none';
   document.getElementById('admin-shell').style.display = 'block';
+    _mencaoIniciarBalao();
   applyRoleRestrictions();
   seedData();
   loadArticlesFromGitHub().then(renderBlog);
@@ -15061,9 +15079,51 @@ function _mencaoOnInput(ta) {
     ta.insertAdjacentElement('afterend', drop);
   }
   if (!list.length) { drop.style.display = 'none'; return; }
-  drop.innerHTML = list.slice(0, 8).map(c => `<div onmousedown="event.preventDefault();_mencaoPick('${ta.id}','${_mencaoToken(c).replace(/'/g,"\\'")}')" style="padding:6px 10px;font-size:12px;cursor:pointer;border-bottom:1px solid #f3f4f6" onmouseenter="this.style.background='#EEF2FF'" onmouseleave="this.style.background='#fff'">👤 <strong>${_escHtml(_mencaoToken(c))}</strong>${c.sigla && c.nome ? ` — ${_escHtml(c.nome)}` : ''}</div>`).join('');
+  drop.innerHTML = list.slice(0, 8).map((c, i) => `<div data-token="${_escHtml(_mencaoToken(c))}" onmousedown="event.preventDefault();_mencaoPick('${ta.id}',this.dataset.token)" onmouseenter="_mencaoSetAtivo(this.parentNode,${i})" style="padding:6px 10px;font-size:12px;cursor:pointer;border-bottom:1px solid #f3f4f6">👤 <strong>${_escHtml(_mencaoToken(c))}</strong>${c.sigla && c.nome ? ` — ${_escHtml(c.nome)}` : ''}</div>`).join('');
   drop.style.display = '';
+  _mencaoSetAtivo(drop, 0);
 }
+
+// Navegação por teclado na lista de sugestões de @menção:
+// ↑/↓ escolhem o nome, Enter ou Tab inserem, Esc fecha a lista.
+function _mencaoDropItems(drop) {
+  return drop ? Array.from(drop.querySelectorAll('[data-token]')) : [];
+}
+
+function _mencaoSetAtivo(drop, idx) {
+  const items = _mencaoDropItems(drop);
+  if (!items.length) return;
+  idx = (idx + items.length) % items.length;
+  drop.dataset.idx = idx;
+  items.forEach((el, i) => { el.style.background = i === idx ? '#EEF2FF' : '#fff'; });
+  const it = items[idx];
+  if (it.offsetTop < drop.scrollTop) drop.scrollTop = it.offsetTop;
+  else if (it.offsetTop + it.offsetHeight > drop.scrollTop + drop.clientHeight) drop.scrollTop = it.offsetTop + it.offsetHeight - drop.clientHeight;
+}
+
+function _mencaoOnKeydown(ev, ta) {
+  const drop = document.getElementById(ta.id + '-mention');
+  if (!drop || drop.style.display === 'none') return;
+  const items = _mencaoDropItems(drop);
+  if (!items.length) return;
+  const idx = parseInt(drop.dataset.idx, 10) || 0;
+  if (ev.key === 'ArrowDown')      { ev.preventDefault(); _mencaoSetAtivo(drop, idx + 1); }
+  else if (ev.key === 'ArrowUp')   { ev.preventDefault(); _mencaoSetAtivo(drop, idx - 1); }
+  else if (ev.key === 'Enter' || ev.key === 'Tab') { ev.preventDefault(); _mencaoPick(ta.id, items[idx].dataset.token); }
+  else if (ev.key === 'Escape')    { ev.preventDefault(); drop.style.display = 'none'; }
+}
+
+// Fecha o painel de menções ao clicar fora do balão ou apertar Esc.
+document.addEventListener('mousedown', e => {
+  const w = document.getElementById('mencao-wrap');
+  const p = document.getElementById('mencao-painel');
+  if (w && p && p.style.display !== 'none' && !w.contains(e.target)) p.style.display = 'none';
+});
+document.addEventListener('keydown', e => {
+  if (e.key !== 'Escape') return;
+  const p = document.getElementById('mencao-painel');
+  if (p) p.style.display = 'none';
+});
 
 function _mencaoPick(taId, token) {
   const ta = document.getElementById(taId);
@@ -15218,9 +15278,21 @@ function _mencaoHighlightCard(el) {
   setTimeout(() => { el.style.outline = prev; }, 2500);
 }
 
+// Espera o card da audiência aparecer na lista (após trocar de aba/recarregar).
+async function _mencaoEsperarCard(sel) {
+  for (let i = 0; i < 60; i++) {
+    const el = document.querySelector(sel);
+    if (el) return el;
+    await new Promise(r => setTimeout(r, 150));
+  }
+  return null;
+}
+
 async function _mencaoIrPara(audienciaId) {
   document.getElementById('mencao-painel').style.display = 'none';
-  const existing = document.querySelector(`[data-aud-id="${CSS.escape(audienciaId)}"]`);
+  const sel = `[data-aud-id="${CSS.escape(audienciaId)}"]`;
+  const naAba = window._liveCurrentTab === 'audiencias';
+  const existing = naAba && document.querySelector(sel);
   if (existing) { _mencaoHighlightCard(existing); return; }
 
   const { sbUrl, sbKey } = getSbCreds();
@@ -15237,11 +15309,21 @@ async function _mencaoIrPara(audienciaId) {
     document.getElementById('aud-data-de').value  = data.data_audiencia;
     document.getElementById('aud-data-ate').value = data.data_audiencia;
     window._audPeriodo = 'custom';
-    await loadAudiencias();
-    const card = document.querySelector(`[data-aud-id="${CSS.escape(audienciaId)}"]`);
+    // Fora da Pauta de Audiências: troca de aba (que já recarrega a lista com os filtros acima)
+    if (naAba) await loadAudiencias(); else switchTab('audiencias');
+    const card = await _mencaoEsperarCard(sel);
     if (card) _mencaoHighlightCard(card);
     else showToast('Audiência encontrada, mas fora dos filtros atuais.');
   } catch(e) { showToast('Erro: ' + e.message); }
+}
+
+// Carrega o contador do balão ao entrar e o mantém atualizado em qualquer aba.
+function _mencaoIniciarBalao() {
+  _mencaoAtualizarBadge();
+  if (window._mencaoBalaoTimer) return;
+  window._mencaoBalaoTimer = setInterval(() => {
+    if (document.visibilityState === 'visible') _mencaoAtualizarBadge();
+  }, 60000);
 }
 
 async function _mencaoMarcarLida(id) {
@@ -15530,7 +15612,7 @@ function _audCard(a) {
     </div>
     <!-- controle de orientação -->
     <div style="border-top:1px solid #f3f4f6;margin-top:12px;padding-top:12px">
-      <textarea id="aud-obs-${_escHtml(a.id)}" placeholder="Nova mensagem… (as anteriores ficam no histórico acima; digite @ para mencionar)" rows="2" oninput="_mencaoOnInput(this)"
+      <textarea id="aud-obs-${_escHtml(a.id)}" placeholder="Nova mensagem… (as anteriores ficam no histórico acima; digite @ para mencionar)" rows="2" oninput="_mencaoOnInput(this)" onkeydown="_mencaoOnKeydown(event,this)"
         style="width:100%;font-size:10px;padding:6px 8px;border:1px solid #e5e7eb;border-radius:5px;resize:vertical;font-family:inherit;color:#374151;background:#fff;box-sizing:border-box"></textarea>
       <div style="display:flex;gap:8px;justify-content:flex-end;flex-wrap:wrap;margin-top:8px">
         <button onclick="audObsSend('${_escHtml(a.id)}')" style="background:#0D2B5E;border:none;border-radius:4px;color:#fff;font-size:10px;font-family:var(--f-mono);letter-spacing:.06em;text-transform:uppercase;padding:7px 14px;cursor:pointer;font-weight:700" title="Adicionar mensagem ao histórico sem apagar as anteriores">➤ Enviar</button>
