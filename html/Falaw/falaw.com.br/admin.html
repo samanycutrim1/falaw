@@ -3007,7 +3007,7 @@ Ex: 0020123-64.2024.5.04.0382 - JOÃO SILVA (Deserção)"></textarea>
 <!-- Balão flutuante de menções -->
 <div id="mencao-wrap">
   <div id="mencao-painel" style="display:none">
-    <div id="mencao-painel-head"><span>🔔 Menções</span><button type="button" onclick="_mencaoTogglePainel()" title="Fechar">×</button></div>
+    <div id="mencao-painel-head"><span>🔔 Menções pendentes</span><button type="button" onclick="_mencaoTogglePainel()" title="Fechar">×</button></div>
     <div style="display:flex;align-items:stretch">
       <div id="mencao-roster" style="width:180px;flex-shrink:0;border-right:1px solid var(--c-divider);max-height:360px;overflow-y:auto"></div>
       <div id="mencao-painel-body" style="flex:1;min-width:0;max-height:360px;overflow-y:auto"></div>
@@ -15175,14 +15175,46 @@ async function _mencaoRemoverPorTexto(audienciaId, texto) {
   _mencaoAtualizarBadge();
 }
 
-// Destaca cada @menção no histórico: vermelha enquanto a pessoa ainda não viu
-// (há registro pendente em "mencoes" para esta audiência/mensagem), cinza depois de vista.
+// Estados de uma menção:
+//  • pendente e ainda não aberta (ninguém clicou nela no painel) → vermelho
+//  • aberta (clicada no painel) mas ainda sem baixa no ✓        → âmbar
+//  • com baixa no ✓ (lida_at)                                    → some do painel; cinza no histórico
+// "Aberta" fica em mencoes.aberta_at; enquanto a coluna não existir no banco,
+// o navegador guarda localmente quais já foram abertas.
+const _MENCAO_ABERTAS_KEY = 'falaw_mencoes_abertas';
+function _mencaoAbertasLocal() {
+  try { return JSON.parse(localStorage.getItem(_MENCAO_ABERTAS_KEY) || '[]'); } catch(e) { return []; }
+}
+function _mencaoFoiAberta(m) {
+  return !!m.aberta_at || _mencaoAbertasLocal().includes(m.id);
+}
+async function _mencaoAbrir(id, audienciaId) {
+  const m = (window._mencaoPendentes || []).find(x => x.id === id);
+  if (m && !_mencaoFoiAberta(m)) {
+    m.aberta_at = new Date().toISOString();
+    try {
+      const l = _mencaoAbertasLocal(); l.push(id);
+      localStorage.setItem(_MENCAO_ABERTAS_KEY, JSON.stringify(l.slice(-500)));
+    } catch(e) {}
+    if (typeof audObsRenderThread === 'function') audObsRenderThread(audienciaId);
+    (async () => {
+      try {
+    const { sbUrl, sbKey } = getSbCreds();
+    if (!sbUrl || !sbKey) return;
+    const sb = supabase.createClient(sbUrl, sbKey, { global: { headers: { 'X-Client-App': 'admin' } } });
+        await sb.from('mencoes').update({ aberta_at: m.aberta_at }).eq('id', id);
+      } catch(e) { /* coluna aberta_at ainda não criada: fica só no navegador */ }
+    })();
+  }
+  _mencaoIrPara(audienciaId);
+}
+
 function _mencaoNorm(t) { return String(t || '').replace(/\s+/g, ' ').trim().toLowerCase(); }
 function _mencaoPendenteNaMsg(audId, token, text) {
-  if (audId == null) return false;
+  if (audId == null) return null;
   const tk = token.toLowerCase(), tx = _mencaoNorm(text);
-  return (window._mencaoPendentes || []).some(p =>
-    String(p.audiencia_id) === String(audId) && (p.mencionado || '').toLowerCase() === tk && _mencaoNorm(p.texto) === tx);
+  return (window._mencaoPendentes || []).find(p =>
+    String(p.audiencia_id) === String(audId) && (p.mencionado || '').toLowerCase() === tk && _mencaoNorm(p.texto) === tx) || null;
 }
 function _mencaoHighlight(text, audId) {
   let html = _escHtml(text.trim()).replace(/\n/g,'<br>');
@@ -15191,10 +15223,12 @@ function _mencaoHighlight(text, audId) {
     if (!token) return;
     const re = new RegExp('@' + _mencaoEscapeRe(token) + '\\b', 'gi');
     const pend = _mencaoPendenteNaMsg(audId, token, text);
-    const st = pend
-      ? 'background:#FEE2E2;color:#B91C1C'
-      : 'background:#F3F4F6;color:#9CA3AF';
-    html = html.replace(re, m => `<strong style="${st};border-radius:3px;padding:0 3px" title="${pend ? 'Menção ainda não vista' : 'Menção já vista'}">${m}</strong>`);
+    const [st, tit] = !pend
+      ? ['background:#F3F4F6;color:#9CA3AF', 'Menção com baixa']
+      : _mencaoFoiAberta(pend)
+        ? ['background:#FEF3C7;color:#B45309', 'Menção aberta, aguardando baixa']
+        : ['background:#FEE2E2;color:#B91C1C', 'Menção ainda não aberta'];
+    html = html.replace(re, m => `<strong style="${st};border-radius:3px;padding:0 3px" title="${tit}">${m}</strong>`);
   });
   return html;
 }
@@ -15209,16 +15243,6 @@ async function _mencaoCarregarPendentes() {
   } catch(e) { return []; }
 }
 
-// Menções já vistas (mais recentes), exibidas em cinza no painel abaixo das pendentes.
-async function _mencaoCarregarLidas() {
-  const { sbUrl, sbKey } = getSbCreds();
-  if (!sbUrl || !sbKey) return [];
-  try {
-    const sb = supabase.createClient(sbUrl, sbKey, { global: { headers: { 'X-Client-App': 'admin' } } });
-    const { data } = await sb.from('mencoes').select('*').not('lida_at', 'is', null).order('lida_at', { ascending: false }).limit(100);
-    return data || [];
-  } catch(e) { return []; }
-}
 
 async function _mencaoAtualizarBadge() {
   const pend = await _mencaoCarregarPendentes();
@@ -15226,10 +15250,7 @@ async function _mencaoAtualizarBadge() {
   const badge = document.getElementById('mencao-badge');
   if (badge) { badge.textContent = pend.length; badge.style.display = pend.length ? '' : 'none'; }
   const painel = document.getElementById('mencao-painel');
-  if (painel && painel.style.display !== 'none') {
-    window._mencaoLidas = await _mencaoCarregarLidas();
-    _mencaoRenderPainel();
-  }
+  if (painel && painel.style.display !== 'none') _mencaoRenderPainel();
 }
 
 function _mencaoTogglePainel() {
@@ -15237,11 +15258,7 @@ function _mencaoTogglePainel() {
   if (!p) return;
   const abrir = p.style.display === 'none';
   p.style.display = abrir ? '' : 'none';
-  if (abrir) {
-    window._mencaoAtivo = null;
-    _mencaoRenderPainel();
-    _mencaoCarregarLidas().then(l => { window._mencaoLidas = l; _mencaoRenderPainel(); });
-  }
+  if (abrir) { window._mencaoAtivo = null; _mencaoRenderPainel(); }
 }
 
 // Painel em duas colunas: lista da equipe (com contagem de pendentes de cada um)
@@ -15268,6 +15285,7 @@ function _mencaoRenderRoster() {
     const token = _mencaoToken(c);
     if (!token) return '';
     const n = _mencaoContarPendentes(token);
+    const naoAbertas = (window._mencaoPendentes || []).some(m => (m.mencionado || '').toLowerCase() === token.toLowerCase() && !_mencaoFoiAberta(m));
     const ativo = window._mencaoAtivo === token;
     return `<div onclick="_mencaoSelecionarPessoa('${token.replace(/'/g,"\\'")}')" style="display:flex;align-items:center;gap:8px;padding:8px 10px;cursor:pointer;border-bottom:1px solid #f3f4f6;background:${ativo ? '#EEF2FF' : '#fff'}" onmouseenter="this.style.background='#F9FAFB'" onmouseleave="this.style.background='${ativo ? '#EEF2FF' : '#fff'}'">
       <div style="width:24px;height:24px;border-radius:50%;background:#0D2B5E;color:#fff;flex-shrink:0;display:flex;align-items:center;justify-content:center;font-size:9px;font-weight:700;font-family:var(--f-mono)">${_escHtml(_mencaoIniciais(c.nome))}</div>
@@ -15275,7 +15293,7 @@ function _mencaoRenderRoster() {
         <div style="font-size:11px;font-weight:600;color:var(--c-dark);white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${_escHtml(c.nome || token)}</div>
         <div style="font-size:9px;font-family:var(--f-mono);color:var(--c-muted)">@${_escHtml(token)}</div>
       </div>
-      ${n ? `<span style="background:#FEE2E2;color:#B91C1C;border-radius:9px;min-width:16px;height:16px;padding:0 5px;font-size:9px;font-weight:700;display:flex;align-items:center;justify-content:center;font-family:var(--f-mono);flex-shrink:0">${n}</span>` : ''}
+      ${n ? `<span style="background:${naoAbertas ? '#FEE2E2' : '#FEF3C7'};color:${naoAbertas ? '#B91C1C' : '#B45309'};border-radius:9px;min-width:16px;height:16px;padding:0 5px;font-size:9px;font-weight:700;display:flex;align-items:center;justify-content:center;font-family:var(--f-mono);flex-shrink:0">${n}</span>` : ''}
     </div>`;
   }).join('');
 }
@@ -15290,25 +15308,22 @@ function _mencaoRenderPessoa(token) {
   const body = document.getElementById('mencao-painel-body');
   if (!body) return;
   if (!token) { body.innerHTML = '<div style="padding:20px 14px;color:var(--c-muted);font-size:11px;text-align:center;line-height:1.6">← Clique numa pessoa para ver as menções dela.</div>'; return; }
-  const daPessoa = m => (m.mencionado || '').toLowerCase() === token.toLowerCase();
-  const pend  = (window._mencaoPendentes || []).filter(daPessoa);
-  const lidas = (window._mencaoLidas || []).filter(daPessoa);
-  if (!pend.length && !lidas.length) { body.innerHTML = `<div style="padding:20px 14px;color:var(--c-muted);font-size:11px;text-align:center">Nenhuma menção para @${_escHtml(token)}.</div>`; return; }
-  // Não vistas: destaque vermelho. Vistas: cinza.
-  const item = (m, vista) => {
-    const bg = vista ? '#fff' : '#FEF2F2';
+  const pend = (window._mencaoPendentes || []).filter(m => (m.mencionado || '').toLowerCase() === token.toLowerCase());
+  if (!pend.length) { body.innerHTML = `<div style="padding:20px 14px;color:var(--c-muted);font-size:11px;text-align:center">Nenhuma menção pendente para @${_escHtml(token)}.</div>`; return; }
+  // Não abertas primeiro (vermelho); depois as já abertas aguardando baixa (âmbar).
+  const ord = pend.slice().sort((a, b) => _mencaoFoiAberta(a) - _mencaoFoiAberta(b));
+  body.innerHTML = ord.map(m => {
+    const aberta = _mencaoFoiAberta(m);
+    const bg = aberta ? '#FFFBEB' : '#FEF2F2';
     return `
-    <div onclick="_mencaoIrPara('${m.audiencia_id}')" style="padding:8px 12px;border-bottom:1px solid #f3f4f6;border-left:3px solid ${vista ? '#D1D5DB' : '#DC2626'};background:${bg};display:flex;gap:8px;align-items:flex-start;cursor:pointer" onmouseenter="this.style.background='#F3F4F6'" onmouseleave="this.style.background='${bg}'">
+    <div onclick="_mencaoAbrir(${m.id},'${m.audiencia_id}')" title="${aberta ? 'Aberta — falta dar baixa no ✓' : 'Ainda não aberta'}" style="padding:8px 12px;border-bottom:1px solid #f3f4f6;border-left:3px solid ${aberta ? '#F59E0B' : '#DC2626'};background:${bg};display:flex;gap:8px;align-items:flex-start;cursor:pointer" onmouseenter="this.style.background='#F3F4F6'" onmouseleave="this.style.background='${bg}'">
       <div style="flex:1;min-width:0">
-        <div style="font-size:9px;font-family:var(--f-mono);text-transform:uppercase;letter-spacing:.06em;color:${vista ? '#9CA3AF' : '#B91C1C'};font-weight:700">${_escHtml(m.autor||'')}</div>
-        <div style="font-size:11px;color:${vista ? '#9CA3AF' : 'var(--c-dark)'};margin-top:2px">${_escHtml((m.texto||'').slice(0,140))}</div>
+        <div style="font-size:9px;font-family:var(--f-mono);text-transform:uppercase;letter-spacing:.06em;color:${aberta ? '#B45309' : '#B91C1C'};font-weight:700">${_escHtml(m.autor||'')}${aberta ? ' · aberta' : ''}</div>
+        <div style="font-size:11px;color:var(--c-dark);margin-top:2px">${_escHtml((m.texto||'').slice(0,140))}</div>
       </div>
-      ${vista
-        ? `<span title="Já vista" style="font-size:9px;font-family:var(--f-mono);text-transform:uppercase;letter-spacing:.06em;color:#9CA3AF;flex-shrink:0;padding-top:2px">✓ Vista</span>`
-        : `<button onclick="event.stopPropagation();_mencaoMarcarLida(${m.id})" title="Marcar como visto" style="background:#fff;border:1px solid #d1d5db;border-radius:3px;padding:2px 7px;font-size:10px;cursor:pointer;color:#1B7A4E;flex-shrink:0">✓</button>`}
+      <button onclick="event.stopPropagation();_mencaoMarcarLida(${m.id})" title="Dar baixa (marcar como visto)" style="background:#fff;border:1px solid #d1d5db;border-radius:3px;padding:2px 7px;font-size:10px;cursor:pointer;color:#1B7A4E;flex-shrink:0">✓</button>
     </div>`;
-  };
-  body.innerHTML = pend.map(m => item(m, false)).join('') + lidas.map(m => item(m, true)).join('');
+  }).join('');
 }
 
 function _mencaoHighlightCard(el) {
