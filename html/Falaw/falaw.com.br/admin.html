@@ -3007,7 +3007,7 @@ Ex: 0020123-64.2024.5.04.0382 - JOÃO SILVA (Deserção)"></textarea>
 <!-- Balão flutuante de menções -->
 <div id="mencao-wrap">
   <div id="mencao-painel" style="display:none">
-    <div id="mencao-painel-head"><span>🔔 Menções pendentes</span><button type="button" onclick="_mencaoTogglePainel()" title="Fechar">×</button></div>
+    <div id="mencao-painel-head"><span>🔔 Menções</span><button type="button" onclick="_mencaoTogglePainel()" title="Fechar">×</button></div>
     <div style="display:flex;align-items:stretch">
       <div id="mencao-roster" style="width:180px;flex-shrink:0;border-right:1px solid var(--c-divider);max-height:360px;overflow-y:auto"></div>
       <div id="mencao-painel-body" style="flex:1;min-width:0;max-height:360px;overflow-y:auto"></div>
@@ -15156,7 +15156,8 @@ async function _mencaoRegistrar(audienciaId, msg, autor) {
   try {
     const sb = supabase.createClient(sbUrl, sbKey, { global: { headers: { 'X-Client-App': 'admin' } } });
     await sb.from('mencoes').insert(nomes.map(n => ({ audiencia_id: audienciaId, mencionado: n, autor, texto: msg })));
-    _mencaoAtualizarBadge();
+    await _mencaoAtualizarBadge();
+    if (typeof audObsRenderThread === 'function') audObsRenderThread(audienciaId);
   } catch(e) { console.warn('mencao insert:', e.message); }
 }
 
@@ -15174,13 +15175,26 @@ async function _mencaoRemoverPorTexto(audienciaId, texto) {
   _mencaoAtualizarBadge();
 }
 
-function _mencaoHighlight(text) {
+// Destaca cada @menção no histórico: vermelha enquanto a pessoa ainda não viu
+// (há registro pendente em "mencoes" para esta audiência/mensagem), cinza depois de vista.
+function _mencaoNorm(t) { return String(t || '').replace(/\s+/g, ' ').trim().toLowerCase(); }
+function _mencaoPendenteNaMsg(audId, token, text) {
+  if (audId == null) return false;
+  const tk = token.toLowerCase(), tx = _mencaoNorm(text);
+  return (window._mencaoPendentes || []).some(p =>
+    String(p.audiencia_id) === String(audId) && (p.mencionado || '').toLowerCase() === tk && _mencaoNorm(p.texto) === tx);
+}
+function _mencaoHighlight(text, audId) {
   let html = _escHtml(text.trim()).replace(/\n/g,'<br>');
   (window._audEquipe || []).forEach(c => {
     const token = _mencaoToken(c);
     if (!token) return;
     const re = new RegExp('@' + _mencaoEscapeRe(token) + '\\b', 'gi');
-    html = html.replace(re, m => `<strong style="color:#7B1A2E">${m}</strong>`);
+    const pend = _mencaoPendenteNaMsg(audId, token, text);
+    const st = pend
+      ? 'background:#FEE2E2;color:#B91C1C'
+      : 'background:#F3F4F6;color:#9CA3AF';
+    html = html.replace(re, m => `<strong style="${st};border-radius:3px;padding:0 3px" title="${pend ? 'Menção ainda não vista' : 'Menção já vista'}">${m}</strong>`);
   });
   return html;
 }
@@ -15190,7 +15204,18 @@ async function _mencaoCarregarPendentes() {
   if (!sbUrl || !sbKey) return [];
   try {
     const sb = supabase.createClient(sbUrl, sbKey, { global: { headers: { 'X-Client-App': 'admin' } } });
-    const { data } = await sb.from('mencoes').select('*').is('lida_at', null).order('created_at', { ascending: false }).limit(50);
+    const { data } = await sb.from('mencoes').select('*').is('lida_at', null).order('created_at', { ascending: false }).limit(200);
+    return data || [];
+  } catch(e) { return []; }
+}
+
+// Menções já vistas (mais recentes), exibidas em cinza no painel abaixo das pendentes.
+async function _mencaoCarregarLidas() {
+  const { sbUrl, sbKey } = getSbCreds();
+  if (!sbUrl || !sbKey) return [];
+  try {
+    const sb = supabase.createClient(sbUrl, sbKey, { global: { headers: { 'X-Client-App': 'admin' } } });
+    const { data } = await sb.from('mencoes').select('*').not('lida_at', 'is', null).order('lida_at', { ascending: false }).limit(100);
     return data || [];
   } catch(e) { return []; }
 }
@@ -15201,7 +15226,10 @@ async function _mencaoAtualizarBadge() {
   const badge = document.getElementById('mencao-badge');
   if (badge) { badge.textContent = pend.length; badge.style.display = pend.length ? '' : 'none'; }
   const painel = document.getElementById('mencao-painel');
-  if (painel && painel.style.display !== 'none') _mencaoRenderPainel();
+  if (painel && painel.style.display !== 'none') {
+    window._mencaoLidas = await _mencaoCarregarLidas();
+    _mencaoRenderPainel();
+  }
 }
 
 function _mencaoTogglePainel() {
@@ -15209,7 +15237,11 @@ function _mencaoTogglePainel() {
   if (!p) return;
   const abrir = p.style.display === 'none';
   p.style.display = abrir ? '' : 'none';
-  if (abrir) { window._mencaoAtivo = null; _mencaoRenderPainel(); }
+  if (abrir) {
+    window._mencaoAtivo = null;
+    _mencaoRenderPainel();
+    _mencaoCarregarLidas().then(l => { window._mencaoLidas = l; _mencaoRenderPainel(); });
+  }
 }
 
 // Painel em duas colunas: lista da equipe (com contagem de pendentes de cada um)
@@ -15258,16 +15290,25 @@ function _mencaoRenderPessoa(token) {
   const body = document.getElementById('mencao-painel-body');
   if (!body) return;
   if (!token) { body.innerHTML = '<div style="padding:20px 14px;color:var(--c-muted);font-size:11px;text-align:center;line-height:1.6">← Clique numa pessoa para ver as menções dela.</div>'; return; }
-  const pend = (window._mencaoPendentes || []).filter(m => (m.mencionado || '').toLowerCase() === token.toLowerCase());
-  if (!pend.length) { body.innerHTML = `<div style="padding:20px 14px;color:var(--c-muted);font-size:11px;text-align:center">Nenhuma menção pendente para @${_escHtml(token)}.</div>`; return; }
-  body.innerHTML = pend.map(m => `
-    <div onclick="_mencaoIrPara('${m.audiencia_id}')" style="padding:8px 12px;border-bottom:1px solid #f3f4f6;display:flex;gap:8px;align-items:flex-start;cursor:pointer" onmouseenter="this.style.background='#F9FAFB'" onmouseleave="this.style.background='#fff'">
+  const daPessoa = m => (m.mencionado || '').toLowerCase() === token.toLowerCase();
+  const pend  = (window._mencaoPendentes || []).filter(daPessoa);
+  const lidas = (window._mencaoLidas || []).filter(daPessoa);
+  if (!pend.length && !lidas.length) { body.innerHTML = `<div style="padding:20px 14px;color:var(--c-muted);font-size:11px;text-align:center">Nenhuma menção para @${_escHtml(token)}.</div>`; return; }
+  // Não vistas: destaque vermelho. Vistas: cinza.
+  const item = (m, vista) => {
+    const bg = vista ? '#fff' : '#FEF2F2';
+    return `
+    <div onclick="_mencaoIrPara('${m.audiencia_id}')" style="padding:8px 12px;border-bottom:1px solid #f3f4f6;border-left:3px solid ${vista ? '#D1D5DB' : '#DC2626'};background:${bg};display:flex;gap:8px;align-items:flex-start;cursor:pointer" onmouseenter="this.style.background='#F3F4F6'" onmouseleave="this.style.background='${bg}'">
       <div style="flex:1;min-width:0">
-        <div style="font-size:9px;font-family:var(--f-mono);text-transform:uppercase;letter-spacing:.06em;color:#7B1A2E;font-weight:700">${_escHtml(m.autor||'')}</div>
-        <div style="font-size:11px;color:var(--c-dark);margin-top:2px">${_escHtml((m.texto||'').slice(0,140))}</div>
+        <div style="font-size:9px;font-family:var(--f-mono);text-transform:uppercase;letter-spacing:.06em;color:${vista ? '#9CA3AF' : '#B91C1C'};font-weight:700">${_escHtml(m.autor||'')}</div>
+        <div style="font-size:11px;color:${vista ? '#9CA3AF' : 'var(--c-dark)'};margin-top:2px">${_escHtml((m.texto||'').slice(0,140))}</div>
       </div>
-      <button onclick="event.stopPropagation();_mencaoMarcarLida(${m.id})" title="Marcar como visto" style="background:none;border:1px solid #d1d5db;border-radius:3px;padding:2px 7px;font-size:10px;cursor:pointer;color:#1B7A4E;flex-shrink:0">✓</button>
-    </div>`).join('');
+      ${vista
+        ? `<span title="Já vista" style="font-size:9px;font-family:var(--f-mono);text-transform:uppercase;letter-spacing:.06em;color:#9CA3AF;flex-shrink:0;padding-top:2px">✓ Vista</span>`
+        : `<button onclick="event.stopPropagation();_mencaoMarcarLida(${m.id})" title="Marcar como visto" style="background:#fff;border:1px solid #d1d5db;border-radius:3px;padding:2px 7px;font-size:10px;cursor:pointer;color:#1B7A4E;flex-shrink:0">✓</button>`}
+    </div>`;
+  };
+  body.innerHTML = pend.map(m => item(m, false)).join('') + lidas.map(m => item(m, true)).join('');
 }
 
 function _mencaoHighlightCard(el) {
@@ -15371,7 +15412,7 @@ function _audObsThreadHtml(obs, id) {
     return `<div style="background:#fff;border-left:2px solid ${borda};border-radius:3px;padding:5px 8px;margin-top:4px;display:flex;gap:6px;align-items:flex-start">`
       + `<div style="flex:1;min-width:0" id="aud-obs-msg-${id}-${i}">`
       + (m.meta ? `<div style="font-family:var(--f-mono);font-size:8px;letter-spacing:.05em;text-transform:uppercase;color:#6B7280;margin-bottom:2px">${_escHtml(m.meta)}</div>` : '')
-      + `<div style="font-family:var(--f-mono);font-size:10px;letter-spacing:.04em;color:#0D2B5E">${_mencaoHighlight(m.text)}</div></div>`
+      + `<div style="font-family:var(--f-mono);font-size:10px;letter-spacing:.04em;color:#0D2B5E">${_mencaoHighlight(m.text, id)}</div></div>`
       + `<button onclick="audObsEditStart('${id}',${i})" title="Editar esta mensagem" style="background:none;border:none;color:#9CA3AF;font-size:11px;line-height:1;cursor:pointer;padding:2px 3px;flex-shrink:0" onmouseenter="this.style.color='#0D2B5E'" onmouseleave="this.style.color='#9CA3AF'">✎</button>`
       + `<button onclick="audObsDelete('${id}',${i})" title="Excluir esta mensagem" style="background:none;border:none;color:#9CA3AF;font-size:11px;line-height:1;cursor:pointer;padding:2px 3px;flex-shrink:0" onmouseenter="this.style.color='#DC2626'" onmouseleave="this.style.color='#9CA3AF'">✕</button>`
       + `</div>`;
