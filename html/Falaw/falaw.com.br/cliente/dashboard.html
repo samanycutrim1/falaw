@@ -14,15 +14,41 @@
   <script src="https://cdn.jsdelivr.net/npm/pptxgenjs@3.12.0/dist/pptxgen.bundle.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
   <script src="../sb-config.js" onerror="void 0"></script>
-  <script>(function(){try{if(localStorage.getItem('falaw_dark_mode')==='1')document.documentElement.classList.add('dark-toggle');}catch(e){}})();</script>
+  <script>(function(){try{var t=localStorage.getItem('falaw_theme');if(!t&&localStorage.getItem('falaw_dark_mode')==='1')t='escuro';t=t||'claro';if(t==='auto')t=window.matchMedia&&matchMedia('(prefers-color-scheme: dark)').matches?'escuro':'claro';if(t!=='claro')document.documentElement.classList.add('tema-'+t);}catch(e){}})();</script>
   <style>
     @import url('https://fonts.googleapis.com/css2?family=Sora:wght@600;700;800&family=IBM+Plex+Mono:wght@400;500&family=Inter:wght@300;400;500;600&display=swap');
 
-    html.dark-toggle { filter: invert(1) hue-rotate(180deg); background: #fff; }
-    html.dark-toggle img, html.dark-toggle svg, html.dark-toggle video,
-    html.dark-toggle iframe, html.dark-toggle canvas, html.dark-toggle embed {
+    /* ── Temas (Claro / Escuro / Escuro suave / Sépia / Automático) ──
+       Os modos escuros invertem a página e "desinvertem" o que já é escuro
+       (barra lateral/topo da marca, balões flutuantes) e as imagens, para
+       manter as cores originais da marca nessas áreas. */
+    html.tema-escuro   { filter: invert(.92) hue-rotate(180deg); background: #fff; }
+    html.tema-penumbra { filter: invert(.86) hue-rotate(180deg) contrast(.9); background: #fff; }
+    html.tema-sepia    { filter: sepia(.35) brightness(.96) contrast(.95); }
+    html.tema-escuro :is(.sidebar, .topbar, #mencao-fab, .whatsapp-btn),
+    html.tema-penumbra :is(.sidebar, .topbar, #mencao-fab, .whatsapp-btn),
+    html.tema-escuro :is(img, video, iframe, embed, svg):not(:is(.sidebar, .topbar, #mencao-fab, .whatsapp-btn) *),
+    html.tema-penumbra :is(img, video, iframe, embed, svg):not(:is(.sidebar, .topbar, #mencao-fab, .whatsapp-btn) *) {
       filter: invert(1) hue-rotate(180deg);
     }
+    .theme-picker { position: relative; }
+    .theme-menu {
+      position: absolute; left: 0; right: 0; bottom: calc(100% + 6px); z-index: 1300; min-width: 220px;
+      background: #0D2B5E; border: 1px solid rgba(255,255,255,.18); border-radius: 8px;
+      box-shadow: 0 10px 28px rgba(0,0,0,.35); padding: 6px; display: none;
+    }
+    .theme-menu.open { display: block; }
+    .theme-menu-title { font-family: 'IBM Plex Mono', monospace; font-size: 9px; letter-spacing: .14em; text-transform: uppercase; color: rgba(255,255,255,.5); padding: 6px 10px 4px; }
+    .theme-opt {
+      display: flex; align-items: center; gap: 10px; width: 100%; background: none; border: none;
+      border-radius: 5px; padding: 8px 10px; cursor: pointer; color: rgba(255,255,255,.85);
+      font-family: 'Inter', sans-serif; font-size: 12px; text-align: left; text-transform: none; letter-spacing: 0; white-space: nowrap;
+    }
+    .theme-opt:hover { background: rgba(255,255,255,.1); color: #fff; }
+    .theme-opt.ativo { background: rgba(255,255,255,.16); color: #fff; font-weight: 600; }
+    .theme-opt .theme-sw { width: 18px; height: 18px; border-radius: 50%; border: 1px solid rgba(255,255,255,.4); flex-shrink: 0; }
+    .theme-opt .theme-ck { margin-left: auto; font-size: 11px; opacity: 0; }
+    .theme-opt.ativo .theme-ck { opacity: 1; }
     .theme-toggle-btn {
       display: flex; align-items: center; justify-content: center; gap: 8px;
       width: 100%; background: transparent; border: 1px solid rgba(255,255,255,.16);
@@ -615,7 +641,7 @@
     </nav>
 
     <div class="sidebar-bottom">
-      <button type="button" class="theme-toggle-btn" id="themeToggleBtn" onclick="toggleDarkMode()" title="Alternar modo noturno">🌙 Modo noturno</button>
+      <div class="theme-picker"><button type="button" class="theme-toggle-btn" id="themeToggleBtn" onclick="toggleTemaMenu(event)" title="Escolher tema (claro, escuro, sépia…)">☀️ Tema: Claro ▾</button><div class="theme-menu" id="themeMenu"></div></div>
       <a href="../index.html" class="btn-back-site">
         ← Voltar ao site
       </a>
@@ -955,18 +981,58 @@ function logout() {
   sessionStorage.removeItem('falaw_session');
   window.location.href = 'index.html';
 }
-function toggleDarkMode() {
-  const isDark = document.documentElement.classList.toggle('dark-toggle');
-  try { localStorage.setItem('falaw_dark_mode', isDark ? '1' : '0'); } catch(e) {}
+// ── Temas: Claro, Escuro, Escuro suave, Sépia e Automático (segue o sistema) ──
+const FALAW_TEMAS = [
+  { id: 'claro',    icone: '☀️', nome: 'Claro',                curto: 'Claro',  cor: '#F4F2EF' },
+  { id: 'escuro',   icone: '🌙', nome: 'Escuro',               curto: 'Escuro', cor: '#141414' },
+  { id: 'penumbra', icone: '🌘', nome: 'Escuro suave',         curto: 'Suave',  cor: '#3a3a3e' },
+  { id: 'sepia',    icone: '📜', nome: 'Sépia (leitura)',      curto: 'Sépia',  cor: '#E9DFC8' },
+  { id: 'auto',     icone: '🖥️', nome: 'Automático (sistema)', curto: 'Auto',   cor: 'linear-gradient(135deg,#F4F2EF 50%,#141414 50%)' },
+];
+function _temaAtual() {
+  try {
+    const t = localStorage.getItem('falaw_theme');
+    if (t && FALAW_TEMAS.some(x => x.id === t)) return t;
+    return localStorage.getItem('falaw_dark_mode') === '1' ? 'escuro' : 'claro';
+  } catch(e) { return 'claro'; }
+}
+function _temaAplicar(t) {
+  const sistemaEscuro = window.matchMedia && matchMedia('(prefers-color-scheme: dark)').matches;
+  const real = t === 'auto' ? (sistemaEscuro ? 'escuro' : 'claro') : t;
+  const h = document.documentElement;
+  FALAW_TEMAS.forEach(x => h.classList.remove('tema-' + x.id));
+  if (real !== 'claro') h.classList.add('tema-' + real);
+  const tm = FALAW_TEMAS.find(x => x.id === t) || FALAW_TEMAS[0];
   const btn = document.getElementById('themeToggleBtn');
-  if (btn) btn.textContent = isDark ? '☀️ Modo dia' : '🌙 Modo noturno';
+  if (btn) btn.textContent = `${tm.icone} Tema: ${tm.curto} ▾`;
+  const menu = document.getElementById('themeMenu');
+  if (menu) menu.innerHTML = '<div class="theme-menu-title">Aparência</div>' + FALAW_TEMAS.map(x =>
+    `<button type="button" class="theme-opt${x.id === t ? ' ativo' : ''}" onclick="escolherTema('${x.id}')">`
+    + `<span class="theme-sw" style="background:${x.cor}"></span>${x.icone} ${x.nome}<span class="theme-ck">✓</span></button>`).join('');
 }
-if (document.documentElement.classList.contains('dark-toggle')) {
-  document.addEventListener('DOMContentLoaded', () => {
-    const btn = document.getElementById('themeToggleBtn');
-    if (btn) btn.textContent = '☀️ Modo dia';
-  });
+function escolherTema(t) {
+  try { localStorage.setItem('falaw_theme', t); localStorage.removeItem('falaw_dark_mode'); } catch(e) {}
+  _temaAplicar(t);
+  const menu = document.getElementById('themeMenu');
+  if (menu) menu.classList.remove('open');
 }
+function toggleTemaMenu(ev) {
+  if (ev) ev.stopPropagation();
+  const menu = document.getElementById('themeMenu');
+  if (!menu) return;
+  _temaAplicar(_temaAtual());
+  menu.classList.toggle('open');
+}
+document.addEventListener('click', e => {
+  const menu = document.getElementById('themeMenu');
+  if (menu && menu.classList.contains('open') && !e.target.closest('.theme-picker')) menu.classList.remove('open');
+});
+if (window.matchMedia) {
+  const mq = matchMedia('(prefers-color-scheme: dark)');
+  const onChange = () => { if (_temaAtual() === 'auto') _temaAplicar('auto'); };
+  if (mq.addEventListener) mq.addEventListener('change', onChange); else if (mq.addListener) mq.addListener(onChange);
+}
+document.addEventListener('DOMContentLoaded', () => _temaAplicar(_temaAtual()));
 function toggleSidebar() {
   document.getElementById('sidebar').classList.toggle('open');
   document.getElementById('sidebarOverlay').classList.toggle('open');
