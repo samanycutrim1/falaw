@@ -14202,7 +14202,7 @@ function _xlPadraoKpiRow(periodId, padraoData, sortOrder) {
     id: ifoodId(), period_id: periodId, tab_key: 'visao-geral', kpi_key: 'table_padrao_decisorio',
     label: 'Padrão Decisório', value: _xlFmtBr(padraoData.rows.length), unit: 'decisões',
     chart_data: { type: 'padrao_decisorio', rows: padraoData.rows, cfg: padraoData.cfg || null, fonte: padraoData.fonte || '' },
-    chart_title: 'Padrão Decisório — Juízes e Desembargadores por Causa Raiz',
+    chart_title: 'Padrão decisório com base nos dados do Toqan',
     sort_order: sortOrder, trend_pct: null,
   };
 }
