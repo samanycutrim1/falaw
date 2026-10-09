@@ -40,8 +40,8 @@
       --muted-l:   rgba(26,10,13,0.3);
       --green:     #0F9E76;
       --green-dim: rgba(15,158,118,0.1);
-      --red:       #C0392B;
-      --red-dim:   rgba(192,57,43,0.1);
+      --red:       #7B1A2E;
+      --red-dim:   rgba(123,26,46,0.1);
       --blue:      #2563EB;
       --blue-dim:  rgba(37,99,235,0.1);
       --sidebar-w: 260px;
@@ -208,6 +208,11 @@
     .kpi-trend.up   { background: var(--green-dim); color: var(--green); }
     .kpi-trend.down { background: var(--red-dim);   color: var(--red); }
     .kpi-trend.flat { background: rgba(0,0,0,0.04);  color: var(--muted); }
+    /* Indicadores favoráveis em verde, desfavoráveis em bordô */
+    .kpi-card.kpi-fav .kpi-value  { color: var(--green); }
+    .kpi-card.kpi-desf .kpi-value { color: var(--red); }
+    .kpi-card.kpi-fav::before  { background: linear-gradient(90deg, var(--green), transparent); }
+    .kpi-card.kpi-desf::before { background: linear-gradient(90deg, var(--red), transparent); }
     .kpi-empty-state {
       grid-column: 1 / -1; text-align: center; padding: 40px 24px;
       font-family: 'IBM Plex Mono', monospace; font-size: 11px;
@@ -889,11 +894,23 @@ async function loadHighlights(periodId) {
 /* ═══════════════════════════════════════════════════════════
    RENDER HELPERS
 ═══════════════════════════════════════════════════════════ */
-function trendHtml(pct) {
+const FAV_COLOR  = '#0F9E76';
+const DESF_COLOR = '#7B1A2E';
+
+// Classifica um rótulo como favorável ('fav'), desfavorável ('desf') ou neutro (null).
+// "desfavorável" é testado antes porque contém "favorável".
+function favTone(text) {
+  const t = String(text || '').toLowerCase();
+  if (/desfav|derrota|\bperd/.test(t)) return 'desf';
+  if (/favor|vit[oó]ria|[eê]xito|improced/.test(t)) return 'fav';
+  return null;
+}
+
+function trendHtml(pct, tone) {
   if (pct == null) return '';
   const n = parseFloat(pct);
   if (isNaN(n)) return '';
-  const cls = n > 0 ? 'up' : n < 0 ? 'down' : 'flat';
+  const cls = tone === 'fav' ? 'up' : tone === 'desf' ? 'down' : n > 0 ? 'up' : n < 0 ? 'down' : 'flat';
   const arrow = n > 0 ? '↑' : n < 0 ? '↓' : '—';
   return `<div class="kpi-trend ${cls}">${arrow} ${Math.abs(n).toFixed(1)}%</div>`;
 }
@@ -915,13 +932,16 @@ function renderKpis(tabKey, kpis) {
     el.innerHTML = '<div class="kpi-empty-state">Nenhum indicador disponível para este período.</div>';
     return;
   }
-  el.innerHTML = filtered.map(k => `
-    <div class="kpi-card">
+  el.innerHTML = filtered.map(k => {
+    const tone = favTone(k.label);
+    return `
+    <div class="kpi-card${tone ? ' kpi-' + tone : ''}">
       <div class="kpi-label">${escHtml(k.label)}</div>
       <div class="kpi-value">${escHtml(k.value)}</div>
       ${k.unit ? `<div class="kpi-unit">${escHtml(k.unit)}</div>` : ''}
-      ${trendHtml(k.trend_pct)}
-    </div>`).join('');
+      ${trendHtml(k.trend_pct, tone)}
+    </div>`;
+  }).join('');
 }
 
 // ── Chart.js global defaults ──────────────────────────────────────────────────
@@ -1205,7 +1225,7 @@ async function renderCharts(tabKey, kpis) {
             const resumoPanel = (hasFav || hasDesf)
               ? `<div id="${resumoId}" style="display:none;flex-direction:row;gap:16px;margin-top:10px;flex-wrap:wrap">
                   ${hasFav  ? `<div style="flex:1;min-width:200px"><div style="font-size:10px;font-weight:700;color:#1B7A4E;margin-bottom:4px;text-transform:uppercase">Fundamento Favorável</div><div style="padding:10px 12px;background:#fff;border-left:3px solid #1B7A4E;border-radius:3px;font-size:11px;line-height:1.65;font-family:'IBM Plex Mono',monospace;color:#222;white-space:pre-wrap">${escHtml(j.fund_fav)}</div></div>` : ''}
-                  ${hasDesf ? `<div style="flex:1;min-width:200px"><div style="font-size:10px;font-weight:700;color:#C62828;margin-bottom:4px;text-transform:uppercase">Fundamento Desfavorável</div><div style="padding:10px 12px;background:#fff;border-left:3px solid #C62828;border-radius:3px;font-size:11px;line-height:1.65;font-family:'IBM Plex Mono',monospace;color:#222;white-space:pre-wrap">${escHtml(j.fund_desf)}</div></div>` : ''}
+                  ${hasDesf ? `<div style="flex:1;min-width:200px"><div style="font-size:10px;font-weight:700;color:#7B1A2E;margin-bottom:4px;text-transform:uppercase">Fundamento Desfavorável</div><div style="padding:10px 12px;background:#fff;border-left:3px solid #7B1A2E;border-radius:3px;font-size:11px;line-height:1.65;font-family:'IBM Plex Mono',monospace;color:#222;white-space:pre-wrap">${escHtml(j.fund_desf)}</div></div>` : ''}
                 </div>`
               : '';
             return `<div style="padding:6px 0;border-bottom:1px solid #eee">
@@ -1261,7 +1281,7 @@ async function renderCharts(tabKey, kpis) {
         const nDesf = rows.filter(r => r.classe === 'D').length;
         const nParc = rows.filter(r => r.classe === 'P').length;
         const badge = (cls, txt) => {
-          const s = cls === 'F' ? 'background:#E8F5EE;color:#1B7A4E' : cls === 'D' ? 'background:#FFEBEE;color:#C62828' : 'background:#FFF3E0;color:#E65100';
+          const s = cls === 'F' ? 'background:#E8F5EE;color:#1B7A4E' : cls === 'D' ? 'background:#F5E6EA;color:#7B1A2E' : 'background:#FFF3E0;color:#E65100';
           return `<span style="display:inline-block;${s};border-radius:3px;padding:2px 7px;font-size:10px;font-weight:700">${escHtml(txt)}</span>`;
         };
         const uid = canvasId + '_dec';
@@ -1270,7 +1290,7 @@ async function renderCharts(tabKey, kpis) {
             <span style="font-size:12px;color:#555">${rows.length} decis${rows.length===1?'ão':'ões'} registradas</span>
             <div style="display:flex;gap:6px">
               ${nFav  ? `<span style="background:#E8F5EE;color:#1B7A4E;padding:3px 10px;border-radius:4px;font-size:11px;font-weight:700">${nFav} Favoráv${nFav===1?'el':'eis'}</span>` : ''}
-              ${nDesf ? `<span style="background:#FFEBEE;color:#C62828;padding:3px 10px;border-radius:4px;font-size:11px;font-weight:700">${nDesf} Desfavoráv${nDesf===1?'el':'eis'}</span>` : ''}
+              ${nDesf ? `<span style="background:#F5E6EA;color:#7B1A2E;padding:3px 10px;border-radius:4px;font-size:11px;font-weight:700">${nDesf} Desfavoráv${nDesf===1?'el':'eis'}</span>` : ''}
               ${nParc ? `<span style="background:#FFF3E0;color:#E65100;padding:3px 10px;border-radius:4px;font-size:11px;font-weight:700">${nParc} Parcial${nParc>1?'is':''}</span>` : ''}
             </div>
           </div>
@@ -1298,7 +1318,7 @@ async function renderCharts(tabKey, kpis) {
             <tbody>
               ${rows.map((r, ri) => {
                 const rowBg = r.classe === 'F' ? 'background:#F3FBF7' : '';
-                const arrow = r.classe === 'F' ? 'color:#1B7A4E' : r.classe === 'D' ? 'color:#9C27B0' : 'color:#E65100';
+                const arrow = r.classe === 'F' ? 'color:#1B7A4E' : r.classe === 'D' ? 'color:#7B1A2E' : 'color:#E65100';
                 const resTxt = r.resultado.replace(/acórdão\s*[-–]/i,'Acórdão ').replace(/sentença\s*[-–]/i,'Sentença ');
                 const hasFunds = r.fund_fav || r.fund_desf;
                 const expandId = uid + '_exp_' + ri;
@@ -1313,7 +1333,7 @@ async function renderCharts(tabKey, kpis) {
                 </tr>
                 ${hasFunds ? `<tr class="dec-expand-row-d" id="${expandId}"><td colspan="7">
                   ${r.fund_fav ? `<div style="margin-bottom:${r.fund_desf?'10px':'0'}"><strong style="color:#1B7A4E">✅ Favoráveis:</strong> ${escHtml(r.fund_fav)}</div>` : ''}
-                  ${r.fund_desf ? `<div><strong style="color:#C62828">⚠ Desfavoráveis:</strong> ${escHtml(r.fund_desf)}</div>` : ''}
+                  ${r.fund_desf ? `<div><strong style="color:#7B1A2E">⚠ Desfavoráveis:</strong> ${escHtml(r.fund_desf)}</div>` : ''}
                 </td></tr>` : ''}`;
               }).join('')}
             </tbody>
@@ -1330,7 +1350,7 @@ async function renderCharts(tabKey, kpis) {
         const cons  = cfg.consolidacao || {};
         const statusBadge = s => s === 'ok'
           ? '<span style="background:#e8f5ee;color:#1b7a4e;border-radius:3px;padding:2px 8px;font-size:11px;font-weight:700">✔ Atingida</span>'
-          : '<span style="background:#ffebee;color:#c62828;border-radius:3px;padding:2px 8px;font-size:11px;font-weight:700">✗ Abaixo</span>';
+          : '<span style="background:#f5e6ea;color:#7b1a2e;border-radius:3px;padding:2px 8px;font-size:11px;font-weight:700">✗ Abaixo</span>';
         const fmtPct = v => (v != null ? Number(v).toFixed(2).replace('.',',') + '%' : '—');
         const fmtN   = v => (v != null ? Number(v).toLocaleString('pt-BR') : '—');
         // Sanity: meta_qtd/meta_pct corrompidos (> 2x base) mostram '—' e aviso
@@ -1342,8 +1362,8 @@ async function renderCharts(tabKey, kpis) {
               <div style="font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.5px;color:#0D2B5E;margin-bottom:10px">🏁 Meta 1 — Encerramento da Base</div>
               <table style="width:100%;font-size:12px;font-family:'IBM Plex Mono',monospace;border-collapse:collapse">
                 <tr><td style="color:#888;padding:3px 0">Base inicial</td><td style="text-align:right;font-weight:600">${fmtN(m.base_inicial)} processos</td></tr>
-                <tr><td style="color:#888;padding:3px 0">Meta (${saneMeta1(m)?fmtPct(m.meta_pct):'—'})</td><td style="text-align:right;font-weight:600">${saneMeta1(m)?fmtN(m.meta_qtd)+' casos':'<span style="color:#c62828;font-size:11px">⚠ Corrija em Admin → Metas</span>'}</td></tr>
-                <tr><td style="color:#888;padding:3px 0">Realizado no mês</td><td style="text-align:right;font-weight:700;color:${m.realizado>=0?'#1b7a4e':'#c62828'}">${m.realizado>=0?'+':''}${fmtN(m.realizado)} (${fmtPct(m.pct_realizado)})</td></tr>
+                <tr><td style="color:#888;padding:3px 0">Meta (${saneMeta1(m)?fmtPct(m.meta_pct):'—'})</td><td style="text-align:right;font-weight:600">${saneMeta1(m)?fmtN(m.meta_qtd)+' casos':'<span style="color:#7b1a2e;font-size:11px">⚠ Corrija em Admin → Metas</span>'}</td></tr>
+                <tr><td style="color:#888;padding:3px 0">Realizado no mês</td><td style="text-align:right;font-weight:700;color:${m.realizado>=0?'#1b7a4e':'#7b1a2e'}">${m.realizado>=0?'+':''}${fmtN(m.realizado)} (${fmtPct(m.pct_realizado)})</td></tr>
                 <tr><td style="color:#888;padding:3px 0">Base atual</td><td style="text-align:right">${fmtN(m.base_atual)} processos</td></tr>
               </table>
               <div style="margin-top:10px">${statusBadge(m.status)}</div>
@@ -1354,7 +1374,7 @@ async function renderCharts(tabKey, kpis) {
               <table style="width:100%;font-size:12px;font-family:'IBM Plex Mono',monospace;border-collapse:collapse">
                 <tr><td style="color:#888;padding:3px 0">Baseline histórico</td><td style="text-align:right">${fmtPct(m.baseline)}</td></tr>
                 <tr><td style="color:#888;padding:3px 0">Meta alvo</td><td style="text-align:right;font-weight:600">${fmtPct(m.alvo)}</td></tr>
-                <tr><td style="color:#888;padding:3px 0">Taxa obtida</td><td style="text-align:right;font-weight:700;color:${m.realizado>=(m.alvo||0)?'#1b7a4e':'#c62828'}">${fmtPct(m.realizado)}</td></tr>
+                <tr><td style="color:#888;padding:3px 0">Taxa obtida</td><td style="text-align:right;font-weight:700;color:${m.realizado>=(m.alvo||0)?'#1b7a4e':'#7b1a2e'}">${fmtPct(m.realizado)}</td></tr>
               </table>
               <div style="margin-top:10px">${statusBadge(m.status)}</div>
             </div>`;
@@ -1367,7 +1387,7 @@ async function renderCharts(tabKey, kpis) {
             &nbsp; ${fmtN(cons.total_decisoes)} decisões &nbsp;·&nbsp;
             <span style="color:#1b7a4e;font-weight:700">${fmtN(cons.total_vitorias)} vitórias (${cons.total_decisoes>0?Math.round(100*cons.total_vitorias/cons.total_decisoes)+'%':'—'})</span>
             &nbsp;·&nbsp;
-            <span style="color:#c62828;font-weight:700">${fmtN(cons.total_derrotas)} derrotas (${cons.total_decisoes>0?Math.round(100*cons.total_derrotas/cons.total_decisoes)+'%':'—'})</span>
+            <span style="color:#7b1a2e;font-weight:700">${fmtN(cons.total_derrotas)} derrotas (${cons.total_decisoes>0?Math.round(100*cons.total_derrotas/cons.total_decisoes)+'%':'—'})</span>
           </div>` : '';
 
         wrap.innerHTML = `<div style="display:flex;flex-wrap:wrap;gap:14px">${metaHtml}</div>${consolidacaoHtml}`;
@@ -1694,6 +1714,25 @@ function applyFalawTheme(cfg) {
         ds.tension = ds.tension ?? 0.3;
       }
       if (!ds.borderRadius && cfg.type === 'bar') ds.borderRadius = 4;
+    });
+  }
+
+  // Cores semânticas: favorável sempre verde, desfavorável sempre bordô
+  if (cfg.data.datasets && !skipColorOverride) {
+    const toneColor = t => t === 'fav' ? FAV_COLOR : t === 'desf' ? DESF_COLOR : null;
+    const labels = cfg.data.labels || [];
+    const labelTones = labels.map(favTone);
+    cfg.data.datasets.forEach(ds => {
+      const c = toneColor(favTone(ds.label));
+      if (c) {
+        ds.backgroundColor = cfg.type === 'line' ? c + '22' : c;
+        if (cfg.type === 'line' || ds.borderColor) ds.borderColor = c;
+        if (cfg.type === 'line') ds.pointBackgroundColor = c;
+      } else if (labelTones.some(Boolean)) {
+        const base = Array.isArray(ds.backgroundColor) ? ds.backgroundColor
+          : labels.map((_, j) => ds.backgroundColor || palette[j % palette.length]);
+        ds.backgroundColor = labels.map((_, j) => toneColor(labelTones[j]) || base[j] || palette[j % palette.length]);
+      }
     });
   }
 
