@@ -1095,7 +1095,7 @@ async function renderCharts(tabKey, kpis) {
       ? `<div class="chart-table-wrap" id="chart-${tabKey}-${i}"></div>`
       : `<div class="chart-wrap" style="height:${h}"><canvas id="chart-${tabKey}-${i}"></canvas></div>`;
     return `<div class="${classes.join(' ')}" data-kpi-key="${escHtml(k.kpi_key || '')}">
-      <div class="chart-card-title">${escHtml(k.chart_title || k.label)}</div>
+      <div class="chart-card-title">${escHtml(isPadrao ? PD_TITLE : (k.chart_title || k.label))}</div>
       ${inner}
     </div>`;
   }).join('');
@@ -2017,6 +2017,7 @@ function renderHighlights(highlights) {
    PADRÃO DECISÓRIO — juízes e desembargadores por causa raiz
    Dados: planilha "Padrão Decisório" (aba Base de decisões), enviada no admin.
 ═══════════════════════════════════════════════════════════ */
+const PD_TITLE = 'Padrão decisório com base nos dados do Toqan';
 const PD_CAUSAS = ['Op. Logístico', 'Nuvem', 'Ex-Foodlover', 'Terceirização', 'Marketplace', 'Restaurantes'];
 const PD_VIEWS = [
   ['juiz',   'Juízes e desembargadores'],
