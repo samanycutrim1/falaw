@@ -1416,6 +1416,7 @@ async function renderCharts(tabKey, kpis) {
         const renderTema = (tRows, tema) => {
           if (!tRows.length) return '';
           const temaLabel = 'Tema ' + tema;
+          const hasObs = tRows.some(r => String(r.obs || '').trim());
           return `
             <div style="margin-bottom:20px">
               <div style="font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.5px;color:#0D2B5E;margin-bottom:8px;padding:6px 10px;background:#e8eef8;border-radius:4px">
@@ -1429,6 +1430,7 @@ async function renderCharts(tabKey, kpis) {
                   <th style="padding:8px 10px;text-align:left;white-space:nowrap">Tribunal</th>
                   <th style="padding:8px 10px;text-align:left;white-space:nowrap">Turma/VT</th>
                   <th style="padding:8px 10px;text-align:left;white-space:nowrap">Relator/Julgador</th>
+                  ${hasObs ? '<th style="padding:8px 10px;text-align:left;white-space:nowrap">Observação</th>' : ''}
                 </tr></thead>
                 <tbody>
                   ${tRows.map((r,i) => `<tr style="background:${i%2===0?'#fff':'#f5f7fc'}">
@@ -1437,6 +1439,7 @@ async function renderCharts(tabKey, kpis) {
                     <td style="padding:7px 10px;border-bottom:1px solid #e8eaf0;white-space:nowrap">${escHtml(r.tribunal||'')}</td>
                     <td style="padding:7px 10px;border-bottom:1px solid #e8eaf0;white-space:nowrap">${escHtml(r.turma||'')}</td>
                     <td style="padding:7px 10px;border-bottom:1px solid #e8eaf0">${escHtml(r.relator||'')}</td>
+                    ${hasObs ? `<td style="padding:7px 10px;border-bottom:1px solid #e8eaf0;min-width:280px;line-height:1.55;font-family:inherit">${escHtml(r.obs||'')}</td>` : ''}
                   </tr>`).join('')}
                 </tbody>
               </table>
