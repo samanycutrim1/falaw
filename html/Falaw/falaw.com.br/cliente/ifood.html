@@ -2023,7 +2023,6 @@ const PD_VIEWS = [
   ['causa',  'Por causa raiz'],
   ['vara',   'Por vara / órgão'],
   ['tema',   'Por tema'],
-  ['pedido', 'Por pedido'],
 ];
 
 function pdEnsureStyles() {
@@ -2032,7 +2031,7 @@ function pdEnsureStyles() {
   st.id = 'pd-styles';
   st.textContent = `
     .pd-wrap{font-family:'IBM Plex Mono',monospace;font-size:11px;color:var(--text)}
-    .pd-kpis{display:grid;grid-template-columns:repeat(auto-fit,minmax(120px,1fr));gap:8px;margin-bottom:14px}
+    .pd-kpis{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:8px;margin-bottom:14px}
     .pd-kpi{border:1px solid var(--border);border-radius:8px;padding:9px 12px;background:#FAF9F7}
     .pd-kpi span{display:block;font-size:9px;letter-spacing:.12em;text-transform:uppercase;color:var(--muted)}
     .pd-kpi b{display:block;font-family:'Sora',sans-serif;font-size:20px;font-weight:700;margin-top:2px}
@@ -2056,14 +2055,6 @@ function pdEnsureStyles() {
     .pd-tbl td.pd-nm{font-weight:600;text-align:left;min-width:170px}
     .pd-nm small{display:block;font-weight:400;color:var(--muted);font-size:10px;margin-top:2px}
     .pd-fav{color:var(--green);font-weight:700} .pd-desf{color:var(--red);font-weight:700} .pd-mix{color:#B7791F;font-weight:700}
-    .pd-ex{display:flex;align-items:center;gap:6px;justify-content:center}
-    .pd-ex i{display:block;width:44px;height:6px;background:rgba(123,26,46,.22);border-radius:3px;overflow:hidden}
-    .pd-ex i b{display:block;height:100%;background:var(--green)}
-    .pd-pill{display:inline-block;font-size:9px;letter-spacing:.05em;text-transform:uppercase;padding:2px 7px;border-radius:3px;font-weight:700;white-space:nowrap}
-    .pd-pill.verde{background:var(--green-dim);color:var(--green)}
-    .pd-pill.amarelo{background:#FDF1D6;color:#8A5A00}
-    .pd-pill.vermelho{background:var(--red-dim);color:var(--red)}
-    .pd-pill.cinza{background:#ECE8E9;color:var(--muted)}
     .pd-chip{display:inline-block;border-radius:10px;padding:1px 7px;margin:1px 3px 1px 0;font-size:10px;white-space:nowrap}
     .pd-chip.def{background:var(--red-dim);color:var(--red)}
     .pd-chip.ind{background:var(--green-dim);color:var(--green)}
@@ -2082,14 +2073,9 @@ function pdEnsureStyles() {
 function renderPadraoDecisorio(wrap, cfg) {
   pdEnsureStyles();
   const ROWS = Array.isArray(cfg.rows) ? cfg.rows : [];
-  const C = Object.assign({ verde: 0.5, amarelo: 0.3, amostra: 3 }, cfg.cfg || {});
-  if (C.verde == null) C.verde = 0.5;
-  if (C.amarelo == null) C.amarelo = 0.3;
-  if (C.amostra == null) C.amostra = 3;
   const state = { view: 'juiz', causa: '', q: '', open: new Set() };
 
   const norm = v => String(v || '').normalize('NFD').replace(/[̀-ͯ]/g, '').toLowerCase();
-  const pct = x => (x * 100).toFixed(1).replace('.', ',') + '%';
   const causaOrder = c => { const i = PD_CAUSAS.indexOf(c); return i < 0 ? 99 : i; };
   const stats = rs => {
     let f = 0, d = 0;
@@ -2109,24 +2095,14 @@ function renderPadraoDecisorio(wrap, cfg) {
   const chips = (list, cls) => list.length
     ? list.map(([p, n]) => `<span class="pd-chip ${cls}">${escHtml(p)} (${n})</span>`).join('')
     : '<span style="color:#aaa">—</span>';
-  const exito = s => s.e === null ? '—'
-    : `<div class="pd-ex"><i><b style="width:${(s.e * 100).toFixed(0)}%"></b></i><span class="${s.e >= C.verde ? 'pd-fav' : s.e < C.amarelo ? 'pd-desf' : 'pd-mix'}">${pct(s.e)}</span></div>`;
   const tendencia = s => !s.n ? '—' : !s.d ? '<span class="pd-fav">Favorável</span>' : !s.f ? '<span class="pd-desf">Desfavorável</span>' : '<span class="pd-mix">Misto</span>';
-  const farol = s => {
-    const n = s.f + s.d;
-    if (!n) return '<span class="pd-pill cinza">Sem decisões</span>';
-    if (n < C.amostra) return '<span class="pd-pill cinza">Amostra pequena</span>';
-    return s.e >= C.verde ? '<span class="pd-pill verde">Verde</span>'
-      : s.e >= C.amarelo ? '<span class="pd-pill amarelo">Amarelo</span>'
-      : '<span class="pd-pill vermelho">Vermelho</span>';
-  };
   const resBadge = r => r.res === 'FAV' ? '<span class="pd-fav">Favorável</span>' : r.res === 'DESF' ? '<span class="pd-desf">Desfavorável</span>' : '<span style="color:var(--muted)">Neutra</span>';
   const instancia = rs => {
     const tipos = new Set(rs.map(r => norm(r.tipo)));
     const ac = [...tipos].some(t => t.includes('acordao')), se = [...tipos].some(t => t.includes('sentenca'));
     return ac && se ? 'Juiz(a) e desembargador(a)' : ac ? 'Desembargador(a) — 2º grau' : se ? 'Juiz(a) — 1º grau' : '';
   };
-  const statCells = s => `<td>${s.n}</td><td class="pd-fav">${s.f}</td><td class="pd-desf">${s.d}</td><td>${exito(s)}</td>`;
+  const statCells = s => `<td>${s.n}</td><td class="pd-fav">${s.f}</td><td class="pd-desf">${s.d}</td>`;
   const decList = rs => rs.slice().sort((a, b) => String(b.data).split('/').reverse().join('').localeCompare(String(a.data).split('/').reverse().join('')))
     .map(r => `<div class="pd-dec">
         <span>${escHtml(r.data || '—')}</span>
@@ -2146,12 +2122,12 @@ function renderPadraoDecisorio(wrap, cfg) {
     const empty = n => `<tr><td colspan="${n}" class="pd-empty">Nada encontrado para este filtro.</td></tr>`;
 
     if (state.view === 'juiz') {
-      const cols = ['Juiz / relator', 'Vara / órgão', 'Decisões', 'Fav.', 'Desf.', 'Êxito', 'Tendência', 'Pedidos deferidos', 'Pedidos indeferidos'];
+      const cols = ['Juiz / relator', 'Vara / órgão', 'Decisões', 'Fav.', 'Desf.', 'Tendência', 'Pedidos deferidos', 'Pedidos indeferidos'];
       const porCausa = group(rs, r => r.causa).sort((a, b) => causaOrder(a.k) - causaOrder(b.k) || a.k.localeCompare(b.k));
       let body = '';
       porCausa.forEach(gc => {
         const sc = stats(gc.rows);
-        body += `<tr class="pd-sec"><td colspan="${cols.length}">${escHtml(gc.k)} — ${sc.n} decis${sc.n === 1 ? 'ão' : 'ões'} · <span class="pd-fav">${sc.f} fav.</span> · <span class="pd-desf">${sc.d} desf.</span>${sc.e !== null ? ' · êxito ' + pct(sc.e) : ''}</td></tr>`;
+        body += `<tr class="pd-sec"><td colspan="${cols.length}">${escHtml(gc.k)} — ${sc.n} decis${sc.n === 1 ? 'ão' : 'ões'} · <span class="pd-fav">${sc.f} fav.</span> · <span class="pd-desf">${sc.d} desf.</span></td></tr>`;
         group(gc.rows, r => r.juiz + '||' + r.vara)
           .sort((a, b) => b.rows.length - a.rows.length || a.k.localeCompare(b.k))
           .forEach(g => {
@@ -2171,13 +2147,13 @@ function renderPadraoDecisorio(wrap, cfg) {
 
     if (state.view === 'causa' || state.view === 'vara') {
       const isCausa = state.view === 'causa';
-      const cols = [isCausa ? 'Causa raiz' : 'Vara / órgão', 'Decisões', 'Fav.', 'Desf.', 'Êxito', 'Farol', isCausa ? 'Julgadores' : 'Causas raiz', 'Pedidos deferidos', 'Pedidos indeferidos'];
+      const cols = [isCausa ? 'Causa raiz' : 'Vara / órgão', 'Decisões', 'Fav.', 'Desf.', isCausa ? 'Julgadores' : 'Causas raiz', 'Pedidos deferidos', 'Pedidos indeferidos'];
       const gs = group(rs, r => isCausa ? r.causa : r.vara)
         .sort((a, b) => isCausa ? causaOrder(a.k) - causaOrder(b.k) : b.rows.length - a.rows.length || a.k.localeCompare(b.k));
       const body = gs.map(g => {
         const s = stats(g.rows);
         const extra = isCausa ? new Set(g.rows.map(r => r.juiz)).size : chips(count(g.rows.map(r => ({ c: [r.causa] })), 'c'), 'neu');
-        return `<tr><td class="pd-nm">${escHtml(g.k)}</td>${statCells(s)}<td>${farol(s)}</td>
+        return `<tr><td class="pd-nm">${escHtml(g.k)}</td>${statCells(s)}
           <td class="${isCausa ? '' : 'pd-txt'}">${extra}</td>
           <td class="pd-txt">${chips(count(g.rows, 'ped'), 'def')}</td>
           <td class="pd-txt">${chips(count(g.rows, 'ind'), 'ind')}</td></tr>`;
@@ -2185,41 +2161,25 @@ function renderPadraoDecisorio(wrap, cfg) {
       return head(cols) + '<tbody>' + (body || empty(cols.length)) + '</tbody>';
     }
 
-    if (state.view === 'tema') {
-      const cols = ['Tema jurídico', 'Decisões', 'Fav.', 'Desf.', 'Êxito', 'Farol', 'Evidência de derrota', 'Evidência de vitória'];
+    {
+      const cols = ['Tema jurídico', 'Decisões', 'Fav.', 'Desf.', 'Evidência de derrota', 'Evidência de vitória'];
       const body = group(rs, r => r.tema).sort((a, b) => b.rows.length - a.rows.length || a.k.localeCompare(b.k)).map(g => {
         const s = stats(g.rows);
         const d = g.rows.find(r => r.res === 'DESF'), v = g.rows.find(r => r.res === 'FAV');
         const ev = r => r ? `${escHtml(r.fund || r.desfecho || '')} <span style="color:var(--muted)">(${escHtml(r.processo)})</span>` : '—';
-        return `<tr><td class="pd-nm">${escHtml(g.k)}</td>${statCells(s)}<td>${farol(s)}</td>
+        return `<tr><td class="pd-nm">${escHtml(g.k)}</td>${statCells(s)}
           <td class="pd-txt" style="border-left:3px solid var(--red)">${ev(d)}</td>
           <td class="pd-txt" style="border-left:3px solid var(--green)">${ev(v)}</td></tr>`;
       }).join('');
       return head(cols) + '<tbody>' + (body || empty(cols.length)) + '</tbody>';
     }
-
-    // por pedido: deferido é desfavorável ao iFood, indeferido é favorável
-    const cols = ['Pedido', 'Deferido', 'Indeferido / afastado', 'Êxito no pedido', 'Deferido por causa raiz'];
-    const all = {};
-    rs.forEach(r => {
-      (r.ped || []).forEach(p => { const x = all[p] = all[p] || { d: 0, i: 0, c: {} }; x.d++; x.c[r.causa] = (x.c[r.causa] || 0) + 1; });
-      (r.ind || []).forEach(p => { const x = all[p] = all[p] || { d: 0, i: 0, c: {} }; x.i++; });
-    });
-    const body = Object.keys(all).sort((a, b) => (all[b].d + all[b].i) - (all[a].d + all[a].i) || a.localeCompare(b)).map(p => {
-      const x = all[p], s = { e: x.i / (x.d + x.i) };
-      const cs = Object.entries(x.c).sort((a, b) => b[1] - a[1]);
-      return `<tr><td class="pd-nm">${escHtml(p)}</td><td class="pd-desf">${x.d}</td><td class="pd-fav">${x.i}</td><td>${exito(s)}</td><td class="pd-txt">${chips(cs, 'neu')}</td></tr>`;
-    }).join('');
-    return head(cols) + '<tbody>' + (body || empty(cols.length)) + '</tbody>';
   }
 
   function draw() {
     const rs = filtered();
     const s = stats(rs);
     wrap.querySelector('.pd-kpis').innerHTML = [
-      ['Decisões', s.n, ''], ['Favoráveis', s.f, 'fav'], ['Desfavoráveis', s.d, 'desf'],
-      ['Taxa de êxito', s.e === null ? '—' : pct(s.e), ''],
-      ['Julgadores', new Set(rs.map(r => r.juiz)).size, ''], ['Varas / órgãos', new Set(rs.map(r => r.vara)).size, ''],
+      ['Decisões proferidas', s.n, ''], ['Favoráveis', s.f, 'fav'], ['Desfavoráveis', s.d, 'desf'],
     ].map(([l, v, c]) => `<div class="pd-kpi ${c}"><span>${l}</span><b>${v}</b></div>`).join('');
     wrap.querySelectorAll('.pd-view').forEach(b => b.setAttribute('aria-pressed', String(b.dataset.view === state.view)));
     wrap.querySelector('.pd-tbl').innerHTML = table(rs);
@@ -2240,7 +2200,6 @@ function renderPadraoDecisorio(wrap, cfg) {
       <div class="pd-tw"><table class="pd-tbl"></table></div>
       <div class="pd-foot">
         ▸ Na visão de juízes e desembargadores, clique na linha para ver cada decisão com o fundamento registrado.<br>
-        Êxito = favoráveis ÷ (favoráveis + desfavoráveis). Farol: verde a partir de ${Math.round(C.verde * 100)}%, amarelo a partir de ${Math.round(C.amarelo * 100)}%; menos de ${C.amostra} decisões = amostra pequena.
         Pedido deferido conta contra o iFood; indeferido ou afastado, a favor.${cfg.fonte ? `<br>Fonte: ${escHtml(cfg.fonte)}.` : ''}
       </div>
     </div>`;
