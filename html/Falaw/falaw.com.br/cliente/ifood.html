@@ -2031,11 +2031,6 @@ function pdEnsureStyles() {
   st.id = 'pd-styles';
   st.textContent = `
     .pd-wrap{font-family:'IBM Plex Mono',monospace;font-size:11px;color:var(--text)}
-    .pd-kpis{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:8px;margin-bottom:14px}
-    .pd-kpi{border:1px solid var(--border);border-radius:8px;padding:9px 12px;background:#FAF9F7}
-    .pd-kpi span{display:block;font-size:9px;letter-spacing:.12em;text-transform:uppercase;color:var(--muted)}
-    .pd-kpi b{display:block;font-family:'Sora',sans-serif;font-size:20px;font-weight:700;margin-top:2px}
-    .pd-kpi.fav b{color:var(--green)} .pd-kpi.desf b{color:var(--red)}
     .pd-tools{display:flex;flex-wrap:wrap;gap:8px;align-items:center;justify-content:space-between;margin-bottom:10px}
     .pd-views{display:flex;flex-wrap:wrap;gap:6px}
     .pd-view{font:inherit;font-size:11px;padding:6px 11px;border:1px solid var(--border-h);background:#fff;color:var(--text);border-radius:4px;cursor:pointer}
@@ -2177,10 +2172,6 @@ function renderPadraoDecisorio(wrap, cfg) {
 
   function draw() {
     const rs = filtered();
-    const s = stats(rs);
-    wrap.querySelector('.pd-kpis').innerHTML = [
-      ['Decisões proferidas', s.n, ''], ['Favoráveis', s.f, 'fav'], ['Desfavoráveis', s.d, 'desf'],
-    ].map(([l, v, c]) => `<div class="pd-kpi ${c}"><span>${l}</span><b>${v}</b></div>`).join('');
     wrap.querySelectorAll('.pd-view').forEach(b => b.setAttribute('aria-pressed', String(b.dataset.view === state.view)));
     wrap.querySelector('.pd-tbl').innerHTML = table(rs);
   }
@@ -2189,7 +2180,6 @@ function renderPadraoDecisorio(wrap, cfg) {
   const causas = [...new Set(ROWS.map(r => r.causa))].sort((a, b) => causaOrder(a) - causaOrder(b) || a.localeCompare(b));
   wrap.innerHTML = `
     <div class="pd-wrap">
-      <div class="pd-kpis"></div>
       <div class="pd-tools">
         <div class="pd-views">${PD_VIEWS.map(([k, l]) => `<button type="button" class="pd-view" data-view="${k}">${l}</button>`).join('')}</div>
         <div class="pd-filters">
