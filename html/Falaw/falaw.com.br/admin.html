@@ -13302,19 +13302,43 @@ function _ifoodClassifyWb(wb) {
 
 const _IFOOD_KIND_LABEL = { principal: 'Planilha principal', decisoes: 'Planilha de decisões', padrao: 'Padrão decisório (Toqan)', desconhecido: 'Não reconhecida — ignorada' };
 
-async function ifoodPreviewExcel(input) {
-  const files = Array.from((input.files) || []);
+// Arquivos acumulados entre seleções: escolher um arquivo depois do outro não substitui o anterior
+let _ifoodXlFiles = [];
+
+function ifoodRemoveXlFile(i) {
+  _ifoodXlFiles.splice(i, 1);
+  _ifoodRenderXlFiles();
+}
+
+function ifoodPreviewExcel(input) {
+  const novos = Array.from((input && input.files) || []);
+  novos.forEach(f => {
+    const dup = _ifoodXlFiles.findIndex(x => x.name === f.name);
+    if (dup >= 0) _ifoodXlFiles[dup] = f; else _ifoodXlFiles.push(f);
+  });
+  if (input) input.value = '';
+  return _ifoodRenderXlFiles();
+}
+
+async function _ifoodRenderXlFiles() {
+  const files = _ifoodXlFiles.slice();
   _ifoodExcelData = null;
-  if (!files.length) return;
-  if (typeof XLSX === 'undefined') { showToast('SheetJS não carregado.'); return; }
+  const list = document.getElementById('ifood-xl-files');
   const st = document.getElementById('ifood-xl-status');
+  if (!files.length) {
+    list.style.display = 'none'; list.innerHTML = '';
+    document.getElementById('ifood-xl-preview').style.display = 'none';
+    st.style.display = 'none';
+    return;
+  }
+  if (typeof XLSX === 'undefined') { showToast('SheetJS não carregado.'); return; }
   st.style.display = 'block'; st.textContent = `Lendo ${files.length} arquivo(s)…`;
   try {
     const items = [];
     for (const file of files) {
       const buf = await file.arrayBuffer();
       const wb = XLSX.read(buf, { type: 'array' });
-      items.push({ filename: file.name, wb, file, kind: _ifoodClassifyWb(wb) });
+      items.push({ filename: file.name, wb, file, kind: _ifoodClassifyWb(wb), idx: items.length });
     }
     // Compatibilidade: arquivo principal com abas sem nome reconhecível
     if (!items.some(it => it.kind === 'principal')) {
@@ -13331,7 +13355,6 @@ async function ifoodPreviewExcel(input) {
       items,
     };
 
-    const list = document.getElementById('ifood-xl-files');
     list.style.display = 'block';
     list.innerHTML = '<label style="display:block;font-family:var(--f-mono);font-size:10px;letter-spacing:.1em;text-transform:uppercase;color:var(--c-muted);margin-bottom:8px">Arquivos selecionados</label>' +
       items.map(it => {
@@ -13340,8 +13363,10 @@ async function ifoodPreviewExcel(input) {
           <span style="font-weight:700;color:${ok ? '#0F9E76' : '#7B1A2E'}">${ok ? '✓' : '✕'}</span>
           <span style="flex:1;word-break:break-all">${escHtml(it.filename)}</span>
           <span style="font-family:var(--f-mono);font-size:10px;text-transform:uppercase;letter-spacing:.06em;color:var(--c-muted)">${escHtml(_IFOOD_KIND_LABEL[it.kind])}${it.note ? ' — ' + escHtml(it.note) : ''}</span>
+          <button type="button" onclick="ifoodRemoveXlFile(${it.idx})" title="Remover arquivo" style="border:none;background:none;cursor:pointer;color:var(--c-muted);font-size:14px;padding:0 4px">✕</button>
         </div>`;
-      }).join('');
+      }).join('') +
+      '<p style="font-size:11px;color:var(--c-muted);margin:6px 0 0">Para adicionar outra planilha, selecione-a no campo acima: as já escolhidas são mantidas.</p>';
 
     const previewItem = main || _ifoodExcelData.padrao[0] || _ifoodExcelData.decisoes[0];
     if (previewItem) {
@@ -14865,18 +14890,7 @@ function _xlBuildKpiRows(periodId, records, decisoes, novos, suspensos1389, susp
       if (exDecs.length) {
         push(tabKey,'table_dec_exfl','Decisões do Período','','',{
           type:'table_decisions',
-          rows: exDecs.map(d => ({
-            num_processo: d.num_processo,
-            reclamante:   d.reclamante,
-            trt:          d.trt,
-            resultado:    d.resultado,
-            tipo:         d.tipo,
-            classe:       _xlClassifyDec(d.resultado),
-            juiz_relator: d.juiz_relator,
-            varaturma:    d.varaturma,
-            fund_fav:     d.fund_fav || '',
-            fund_desf:    d.fund_desf || '',
-          }))
+          rows: exDecs.map(d => _xlDecTableRow(d))
         }, 'Tabela Demonstrativa — Decisões do Período');
       }
     }
@@ -14892,19 +14906,7 @@ function _xlBuildKpiRows(periodId, records, decisoes, novos, suspensos1389, susp
         push(tabKey,'table_dec_terc','Decisões — Empresas no Polo Passivo','','',{
           type:'table_decisions',
           show_reclamadas: true,
-          rows: tercDecs.map(d => ({
-            num_processo: d.num_processo,
-            reclamante:   d.reclamante,
-            trt:          d.trt,
-            resultado:    d.resultado,
-            tipo:         d.tipo,
-            classe:       _xlClassifyDec(d.resultado),
-            juiz_relator: d.juiz_relator,
-            varaturma:    d.varaturma,
-            fund_fav:     d.fund_fav || '',
-            fund_desf:    d.fund_desf || '',
-            reclamadas:   _xlParseEntityList(d.reclamada || coReusByProc.get(_procKey(d.num_processo)) || ''),
-          }))
+          rows: tercDecs.map(d => _xlDecTableRow(d, coReusByProc.get(_procKey(d.num_processo)) || ''))
         }, 'Decisões do Período — Empresas no Polo Passivo');
       }
     }
@@ -14954,6 +14956,70 @@ function _xlBuildKpiRows(periodId, records, decisoes, novos, suspensos1389, susp
   return rows;
 }
 
+function _ifoodReadDecisoesFiles(decFiles) {
+  let out = [];
+  for (const df of decFiles) {
+    const decRaw = XLSX.utils.sheet_to_json(df.wb.Sheets[df.wb.SheetNames[0]], { header:1, defval:'' });
+    const firstRow = decRaw[0] || [];
+    const skipHeader = firstRow[0] && !/^\d/.test(String(firstRow[0]).trim());
+    out = out.concat(_xlParseDecisoes(skipHeader ? decRaw.slice(1) : decRaw, skipHeader ? firstRow : null));
+  }
+  return out;
+}
+
+function _xlDecTableRow(d, reclamadasFallback) {
+  const row = {
+    num_processo: d.num_processo,
+    reclamante:   d.reclamante,
+    trt:          d.trt,
+    resultado:    d.resultado,
+    tipo:         d.tipo,
+    classe:       _xlClassifyDec(d.resultado),
+    juiz_relator: d.juiz_relator,
+    varaturma:    d.varaturma,
+    fund_fav:     d.fund_fav || '',
+    fund_desf:    d.fund_desf || '',
+  };
+  if (reclamadasFallback !== undefined) row.reclamadas = _xlParseEntityList(d.reclamada || reclamadasFallback || '');
+  return row;
+}
+
+// Atualiza só as tabelas de decisões (Ex-Foodlover e Terceirização) a partir da planilha
+// de decisões, juntando com as linhas já salvas no período (a mais nova vale por processo).
+async function _ifoodSaveDecisionTables(periodId, decs) {
+  const alvos = [
+    { cr: 'EX-FOODLOVER',  tabKey: 'ex-foodlover',  kpiKey: 'table_dec_exfl', label: 'Decisões do Período', title: 'Tabela Demonstrativa — Decisões do Período', extra: {} },
+    { cr: 'TERCEIRIZAÇÃO', tabKey: 'terceirizacao', kpiKey: 'table_dec_terc', label: 'Decisões — Empresas no Polo Passivo', title: 'Decisões do Período — Empresas no Polo Passivo', extra: { show_reclamadas: true } },
+  ];
+  const resumo = [];
+  for (const a of alvos) {
+    const novos = decs.filter(d => d.causa_raiz === a.cr);
+    if (!novos.length) continue;
+    const { data: cur, error: curErr } = await ifoodApi('/api/ifood/kpis?periodId=' + encodeURIComponent(periodId) + '&tabKey=' + encodeURIComponent(a.tabKey));
+    if (curErr) throw new Error(curErr.message);
+    const tabKpis = Array.isArray(cur) ? cur : [];
+    const old = tabKpis.find(k => k.kpi_key === a.kpiKey);
+    const oldCd = old && old.chart_data ? (typeof old.chart_data === 'string' ? JSON.parse(old.chart_data) : old.chart_data) : null;
+    const merged = new Map();
+    ((oldCd && oldCd.rows) || []).forEach(r => merged.set(r.num_processo, r));
+    novos.forEach(d => {
+      const prev = merged.get(d.num_processo);
+      const fallback = a.extra.show_reclamadas ? ((prev && prev.reclamadas) || []).join('; ') : undefined;
+      merged.set(d.num_processo, _xlDecTableRow(d, fallback));
+    });
+    const row = {
+      id: old ? old.id : ifoodId(), period_id: periodId, tab_key: a.tabKey, kpi_key: a.kpiKey,
+      label: a.label, value: '', unit: '', chart_title: (old && old.chart_title) || a.title, trend_pct: null,
+      chart_data: Object.assign({ type: 'table_decisions' }, a.extra, { rows: [...merged.values()] }),
+      sort_order: old ? old.sort_order : tabKpis.reduce((m, k) => Math.max(m, k.sort_order || 0), 0) + 1,
+    };
+    const { error } = await ifoodApi('/api/ifood/kpis/bulk', { method: 'POST', body: JSON.stringify({ rows: [row] }) });
+    if (error) throw new Error(error.message);
+    resumo.push(`${a.tabKey === 'ex-foodlover' ? 'Ex-Foodlover' : 'Terceirização'}: ${novos.length}`);
+  }
+  return resumo.length ? resumo.join(', ') : 'nenhuma de Ex-Foodlover ou Terceirização, que são as abas com tabela de decisões';
+}
+
 async function ifoodSaveExcel() {
   if (!ifoodApiBase()) { showToast('Configure o Supabase nas Configurações.'); return; }
   if (!_ifoodExcelData) { showToast('Selecione um arquivo primeiro.'); return; }
@@ -14962,7 +15028,7 @@ async function ifoodSaveExcel() {
   const st = document.getElementById('ifood-xl-status');
   const setStatus = msg => { st.style.display='block'; st.textContent=msg; };
   const { main, decisoes: decFiles, padrao: padFiles } = _ifoodExcelData;
-  if (!main && !padFiles.length) { showToast('Selecione a planilha principal ou a do padrão decisório.'); return; }
+  if (!main && !padFiles.length && !decFiles.length) { showToast('Selecione ao menos uma planilha reconhecida.'); return; }
 
   // Padrão decisório: junta todas as planilhas enviadas (sem duplicar a mesma decisão)
   let padraoData = null;
@@ -14981,31 +15047,42 @@ async function ifoodSaveExcel() {
     if (!rows.length) { setStatus('A planilha do padrão decisório não tem decisões preenchidas na aba "Base de decisões".'); if (!main) return; padraoData = null; }
   }
 
-  // Só o padrão decisório: atualiza apenas essa tabela, sem mexer nos demais dados do período
+  // Sem a planilha principal: atualiza só as tabelas das planilhas enviadas
+  // (padrão decisório e/ou decisões), sem mexer nos demais dados do período
   if (!main) {
     try {
-      setStatus(`Salvando padrão decisório (${padraoData.rows.length} decisões)…`);
-      const { data: cur, error: curErr } = await ifoodApi('/api/ifood/kpis?periodId=' + encodeURIComponent(periodId) + '&tabKey=visao-geral');
-      if (curErr) throw new Error(curErr.message);
-      const vg = Array.isArray(cur) ? cur : [];
-      const old = vg.find(k => k.kpi_key === 'table_padrao_decisorio');
-      const acordos = vg.find(k => k.kpi_key === 'table_acordos');
-      let sortOrder;
-      if (old) sortOrder = old.sort_order;
-      else if (acordos) {
-        sortOrder = acordos.sort_order;
-        await ifoodApi('/api/ifood/kpis/' + encodeURIComponent(acordos.id), { method: 'PATCH', body: JSON.stringify({ sort_order: acordos.sort_order + 1 }) });
-      } else sortOrder = vg.reduce((m, k) => Math.max(m, k.sort_order || 0), 0) + 1;
-      const row = _xlPadraoKpiRow(periodId, padraoData, sortOrder);
-      if (old) row.id = old.id;
-      const { error } = await ifoodApi('/api/ifood/kpis/bulk', { method: 'POST', body: JSON.stringify({ rows: [row] }) });
-      if (error) throw new Error(error.message);
-      setStatus(`✓ Padrão decisório salvo: ${padraoData.rows.length} decisões na Visão Geral. Os demais dados do período não foram alterados.`);
-      showToast('Padrão decisório atualizado!');
+      const feitos = [];
+      if (padraoData) {
+        setStatus(`Salvando padrão decisório (${padraoData.rows.length} decisões)…`);
+        const { data: cur, error: curErr } = await ifoodApi('/api/ifood/kpis?periodId=' + encodeURIComponent(periodId) + '&tabKey=visao-geral');
+        if (curErr) throw new Error(curErr.message);
+        const vg = Array.isArray(cur) ? cur : [];
+        const old = vg.find(k => k.kpi_key === 'table_padrao_decisorio');
+        const acordos = vg.find(k => k.kpi_key === 'table_acordos');
+        let sortOrder;
+        if (old) sortOrder = old.sort_order;
+        else if (acordos) {
+          sortOrder = acordos.sort_order;
+          await ifoodApi('/api/ifood/kpis/' + encodeURIComponent(acordos.id), { method: 'PATCH', body: JSON.stringify({ sort_order: acordos.sort_order + 1 }) });
+        } else sortOrder = vg.reduce((m, k) => Math.max(m, k.sort_order || 0), 0) + 1;
+        const row = _xlPadraoKpiRow(periodId, padraoData, sortOrder);
+        if (old) row.id = old.id;
+        const { error } = await ifoodApi('/api/ifood/kpis/bulk', { method: 'POST', body: JSON.stringify({ rows: [row] }) });
+        if (error) throw new Error(error.message);
+        feitos.push(`padrão decisório (${padraoData.rows.length} decisões)`);
+      }
+      if (decFiles.length) {
+        setStatus('Salvando tabelas de decisões…');
+        const decs = _ifoodReadDecisoesFiles(decFiles);
+        const r = await _ifoodSaveDecisionTables(periodId, decs);
+        feitos.push(`${decs.length} decisões da planilha de decisões (${r})`);
+      }
+      setStatus(`✓ Salvo: ${feitos.join(' · ')}. Os demais dados do período não foram alterados.`);
+      showToast('Planilhas salvas!');
     } catch (e) {
       setStatus('Erro: ' + e.message);
       console.error(e);
-      showToast('Erro ao salvar o padrão decisório.');
+      showToast('Erro ao salvar.');
     }
     return;
   }
@@ -15027,15 +15104,7 @@ async function ifoodSaveExcel() {
     const decMainRaw = decSh ? XLSX.utils.sheet_to_json(decSh,{header:1,defval:''}) : [];
     let decisoes = decSh ? _xlParseDecisoes(decMainRaw.slice(1), decMainRaw[0]) : [];
     // Decisões dos arquivos separados — apenas para tabelas demonstrativas (não contam nos KPIs)
-    let decisoesTabela = [];
-    for (const df of decFiles) {
-      setStatus(`Lendo arquivo de Decisões separado (${df.filename})…`);
-      const decShSep = df.wb.Sheets[df.wb.SheetNames[0]];
-      const decRaw = XLSX.utils.sheet_to_json(decShSep, { header:1, defval:'' });
-      const firstRow = decRaw[0] || [];
-      const skipHeader = firstRow[0] && !/^\d/.test(String(firstRow[0]).trim());
-      decisoesTabela = decisoesTabela.concat(_xlParseDecisoes(skipHeader ? decRaw.slice(1) : decRaw, skipHeader ? firstRow : null));
-    }
+    const decisoesTabela = _ifoodReadDecisoesFiles(decFiles);
     if (decFiles.length) setStatus(`Decisões: ${decisoes.length} (planilha principal) + ${decisoesTabela.length} (arquivo(s) separado(s) — só tabela)`);
 
     const novosSh = findSh('Novos Casos Recebidos','Novos Casos','novos');
