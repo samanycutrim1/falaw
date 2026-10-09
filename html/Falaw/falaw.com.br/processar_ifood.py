@@ -954,7 +954,7 @@ def build_causa_raiz_js(tab_id, data):
     new Chart(document.getElementById('chart_{tab_id}_julgdesf'), {{
       type: 'bar',
       data: {{ labels: {s_lbl}, datasets: [{{ label:'Desfavoráveis', data: {s_dat},
-        backgroundColor: '#C0392B', borderRadius: 4 }}] }},
+        backgroundColor: '#7B1A2E', borderRadius: 4 }}] }},
       options: {{ indexAxis:'y', responsive:true, maintainAspectRatio:false,
         plugins:{{ legend:{{ display:false }} }},
         scales:{{ x:{{ grid:{{ color:'rgba(0,0,0,0.05)' }} }}, y:{{ grid:{{ display:false }}, ticks:{{ font:{{ size:9 }} }} }} }}
@@ -1009,7 +1009,7 @@ def build_causa_raiz_js(tab_id, data):
     new Chart(document.getElementById('chart_{tab_id}_dec'), {{
       type: 'doughnut',
       data: {{ labels: {dec_labels}, datasets: [{{ data: {dec_data},
-        backgroundColor: ['#0F9E76','#C0392B','#f59e0b'],
+        backgroundColor: ['#0F9E76','#7B1A2E','#f59e0b'],
         borderWidth: 0 }}] }},
       options: {{ responsive:true, plugins:{{ legend:{{ position:'right', labels:{{ font:{{ family:'IBM Plex Mono', size:10 }}, color:'#1A0A0D' }} }} }} }}
     }});
@@ -1193,7 +1193,7 @@ def build_html(kpis, global_charts, causa_raiz_data, suspensos_1389, suspensos_1
       --text:     #1A0A0D;
       --muted:    rgba(26,10,13,0.52);
       --green:    #0F9E76;
-      --red:      #C0392B;
+      --red:      #7B1A2E;
       --sidebar-w: 248px;
     }}
     html, body {{ height:100%; background:var(--bg); color:var(--text); font-family:'DM Sans',sans-serif; font-size:14px; }}
@@ -1323,7 +1323,7 @@ def build_html(kpis, global_charts, causa_raiz_data, suspensos_1389, suspensos_1
       margin-top:7px; padding:2px 6px; border-radius:3px;
     }}
     .kpi-trend.up   {{ background:rgba(15,158,118,0.1); color:var(--green); }}
-    .kpi-trend.down {{ background:rgba(192,57,43,0.1);  color:var(--red); }}
+    .kpi-trend.down {{ background:rgba(123,26,46,0.1);  color:var(--red); }}
     .kpi-trend.flat {{ background:rgba(0,0,0,0.04);     color:var(--muted); }}
 
     /* CHARTS */
@@ -1735,7 +1735,7 @@ new Chart(document.getElementById('chart-resultados'), {{
   data: {{
     labels: {res_labels_js},
     datasets: [{{ data: {res_data_js},
-      backgroundColor: ['#0F9E76','#C0392B','#f59e0b','#6366f1'],
+      backgroundColor: ['#0F9E76','#7B1A2E','#f59e0b','#6366f1'],
       borderWidth: 2, borderColor: '#fff' }}]
   }},
   options: {{
@@ -1753,7 +1753,7 @@ new Chart(document.getElementById('chart-dec-cr'), {{
     labels: {dec_cr_labels_js},
     datasets: [
       {{ label:'Favorável',    data: {dec_cr_fav_js},  backgroundColor:'#0F9E76', borderRadius:3 }},
-      {{ label:'Desfavorável', data: {dec_cr_desf_js}, backgroundColor:'#C0392B', borderRadius:3 }}
+      {{ label:'Desfavorável', data: {dec_cr_desf_js}, backgroundColor:'#7B1A2E', borderRadius:3 }}
     ]
   }},
   options: {{
@@ -1833,7 +1833,7 @@ new Chart(document.getElementById('chart-trt-fav'), {{
   data: {{
     labels: {trt_chart_labels},
     datasets: [{{ label:'% Favorável', data: {trt_chart_fav},
-      backgroundColor: {trt_chart_fav}.map(v => v >= 30 ? '#0F9E76' : v >= 15 ? '#f59e0b' : '#C0392B'),
+      backgroundColor: {trt_chart_fav}.map(v => v >= 30 ? '#0F9E76' : v >= 15 ? '#f59e0b' : '#7B1A2E'),
       borderRadius: 4 }}]
   }},
   options: {{
