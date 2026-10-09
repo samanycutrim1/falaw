@@ -2348,16 +2348,17 @@
               <option value="">— Selecione um período —</option>
             </select>
           </div>
-          <div class="form-field" style="margin:0;flex:1;min-width:200px">
-            <label>Arquivo Excel principal (.xlsx / .xls) *</label>
-            <input type="file" id="ifood-xl-file" accept=".xlsx,.xls" onchange="ifoodPreviewExcel(this)" style="padding:10px 14px;border:1px solid var(--c-divider);border-radius:2px;width:100%;background:#fafaf8;" />
-          </div>
-          <div class="form-field" style="margin:0;flex:1;min-width:200px">
-            <label>Planilha de Decisões (opcional) *</label>
-            <input type="file" id="ifood-xl-decisoes" accept=".xlsx,.xls" style="padding:10px 14px;border:1px solid var(--c-divider);border-radius:2px;width:100%;background:#fafaf8;" />
-            <p style="font-size:11px;color:var(--c-muted);margin:4px 0 0">Colunas: Nº Processo · Reclamante · TRT · Causa Raiz · Resultado · Juiz · Vara/Turma · Fund. Fav. · Fund. Desf.</p>
+          <div class="form-field" style="margin:0;flex:2;min-width:260px">
+            <label>Planilhas Excel (.xlsx / .xls) — selecione uma ou várias *</label>
+            <input type="file" id="ifood-xl-file" accept=".xlsx,.xls" multiple onchange="ifoodPreviewExcel(this)" style="padding:10px 14px;border:1px solid var(--c-divider);border-radius:2px;width:100%;background:#fafaf8;" />
+            <p style="font-size:11px;color:var(--c-muted);margin:4px 0 0;line-height:1.6">Cada arquivo é reconhecido automaticamente:
+              <strong>principal</strong> (aba IFOOD, Decisões, Suspensos Tema 1389/1291/300/59, Encerrados…),
+              <strong>decisões</strong> (Nº Processo · Reclamante · TRT · Causa Raiz · Resultado · Juiz · Vara/Turma · Fund. Fav. · Fund. Desf. · Reclamada) e
+              <strong>padrão decisório</strong> (aba "Base de decisões" — base Toqan).
+              Enviar só a planilha do padrão decisório atualiza apenas essa tabela na Visão Geral.</p>
           </div>
         </div>
+        <div id="ifood-xl-files" style="display:none;margin-bottom:16px"></div>
         <div id="ifood-xl-preview" style="display:none;margin-bottom:16px">
           <label style="display:block;font-family:var(--f-mono);font-size:10px;letter-spacing:.1em;text-transform:uppercase;color:var(--c-muted);margin-bottom:10px">Pré-visualização (primeiras linhas)</label>
           <div style="overflow:auto;max-height:320px;border:1px solid var(--c-divider);border-radius:4px;background:#fff">
@@ -13285,27 +13286,86 @@ function fileToDataUrl(file) {
   });
 }
 
+// Classifica um workbook enviado no upload múltiplo do iFood:
+// 'padrao' (aba "Base de decisões"), 'principal' (abas IFOOD/Novos/Suspensos…),
+// 'decisoes' (planilha avulsa de decisões) ou 'desconhecido'.
+function _ifoodClassifyWb(wb) {
+  const names = wb.SheetNames.map(n => _xlNormTxt(n));
+  if (names.some(n => n.includes('BASE DE DECISOES'))) return 'padrao';
+  const mainSigs = ['IFOOD', 'NOVOS CASOS', 'ENCERRADOS', 'SUSPENSOS', 'JULGADORES', 'ACORDOS', 'VALORES ELEVADOS'];
+  if (names.some(n => mainSigs.some(sig => n.includes(sig)))) return 'principal';
+  const firstWs = wb.Sheets[wb.SheetNames[0]];
+  const head = (XLSX.utils.sheet_to_json(firstWs, { header: 1, defval: '' })[0] || []).map(h => _xlNormTxt(h)).join(' | ');
+  if (head.includes('PROCESSO') && head.includes('RESULTADO')) return 'decisoes';
+  return 'desconhecido';
+}
+
+const _IFOOD_KIND_LABEL = { principal: 'Planilha principal', decisoes: 'Planilha de decisões', padrao: 'Padrão decisório (Toqan)', desconhecido: 'Não reconhecida — ignorada' };
+
 async function ifoodPreviewExcel(input) {
-  const file = input.files && input.files[0];
-  if (!file) return;
+  const files = Array.from((input.files) || []);
+  _ifoodExcelData = null;
+  if (!files.length) return;
   if (typeof XLSX === 'undefined') { showToast('SheetJS não carregado.'); return; }
   const st = document.getElementById('ifood-xl-status');
-  st.style.display = 'block'; st.textContent = 'Lendo arquivo…';
+  st.style.display = 'block'; st.textContent = `Lendo ${files.length} arquivo(s)…`;
   try {
-    const buf = await file.arrayBuffer();
-    const wb = XLSX.read(buf, { type: 'array' });
-    // Store workbook for processing; preview uses first sheet header-based rows
-    const firstWs = wb.Sheets[wb.SheetNames[0]];
-    const previewRows = XLSX.utils.sheet_to_json(firstWs, { defval: '', header: 1 });
-    const cols = previewRows[0] || [];
-    const preview = previewRows.slice(1, 21);
-    let html = '<thead><tr style="background:var(--c-accent);color:#fff">' + cols.map(c => `<th style="padding:6px 10px;text-align:left;white-space:nowrap">${escHtml(String(c))}</th>`).join('') + '</tr></thead><tbody>';
-    html += preview.map((r, i) => `<tr style="background:${i%2?'#f8f8f6':'#fff'}">` + cols.map((_, ci) => `<td style="padding:5px 10px;border-bottom:1px solid #eee;white-space:nowrap">${escHtml(String(r[ci] ?? ''))}</td>`).join('') + '</tr>').join('');
-    html += '</tbody>';
-    document.getElementById('ifood-xl-table').innerHTML = html;
-    document.getElementById('ifood-xl-preview').style.display = 'block';
-    _ifoodExcelData = { filename: file.name, wb, file };
-    st.textContent = `✓ ${wb.SheetNames.length} aba(s): ${wb.SheetNames.join(', ')}. ${previewRows.length - 1} linhas na primeira aba. Selecione o período e clique em "Salvar dados no Cockroach".`;
+    const items = [];
+    for (const file of files) {
+      const buf = await file.arrayBuffer();
+      const wb = XLSX.read(buf, { type: 'array' });
+      items.push({ filename: file.name, wb, file, kind: _ifoodClassifyWb(wb) });
+    }
+    // Compatibilidade: arquivo principal com abas sem nome reconhecível
+    if (!items.some(it => it.kind === 'principal')) {
+      const unk = items.find(it => it.kind === 'desconhecido');
+      if (unk) unk.kind = 'principal';
+    }
+    const principais = items.filter(it => it.kind === 'principal');
+    principais.slice(1).forEach(it => { it.kind = 'desconhecido'; it.note = 'mais de uma planilha principal — apenas a primeira é usada'; });
+    const main = principais[0] || null;
+    _ifoodExcelData = {
+      main,
+      decisoes: items.filter(it => it.kind === 'decisoes'),
+      padrao:   items.filter(it => it.kind === 'padrao'),
+      items,
+    };
+
+    const list = document.getElementById('ifood-xl-files');
+    list.style.display = 'block';
+    list.innerHTML = '<label style="display:block;font-family:var(--f-mono);font-size:10px;letter-spacing:.1em;text-transform:uppercase;color:var(--c-muted);margin-bottom:8px">Arquivos selecionados</label>' +
+      items.map(it => {
+        const ok = it.kind !== 'desconhecido';
+        return `<div style="display:flex;gap:10px;align-items:center;padding:7px 10px;border:1px solid var(--c-divider);border-radius:3px;margin-bottom:4px;background:#fff;font-size:12px">
+          <span style="font-weight:700;color:${ok ? '#0F9E76' : '#7B1A2E'}">${ok ? '✓' : '✕'}</span>
+          <span style="flex:1;word-break:break-all">${escHtml(it.filename)}</span>
+          <span style="font-family:var(--f-mono);font-size:10px;text-transform:uppercase;letter-spacing:.06em;color:var(--c-muted)">${escHtml(_IFOOD_KIND_LABEL[it.kind])}${it.note ? ' — ' + escHtml(it.note) : ''}</span>
+        </div>`;
+      }).join('');
+
+    const previewItem = main || _ifoodExcelData.padrao[0] || _ifoodExcelData.decisoes[0];
+    if (previewItem) {
+      const pwb = previewItem.wb;
+      const sheetName = previewItem.kind === 'padrao'
+        ? (pwb.SheetNames.find(n => _xlNormTxt(n).includes('BASE DE DECISOES')) || pwb.SheetNames[0])
+        : pwb.SheetNames[0];
+      const previewRows = XLSX.utils.sheet_to_json(pwb.Sheets[sheetName], { defval: '', header: 1 });
+      const cols = previewRows[0] || [];
+      const preview = previewRows.slice(1).filter(r => r.some(c => String(c).trim())).slice(0, 20);
+      let html = '<thead><tr style="background:var(--c-accent);color:#fff">' + cols.map(c => `<th style="padding:6px 10px;text-align:left;white-space:nowrap">${escHtml(String(c))}</th>`).join('') + '</tr></thead><tbody>';
+      html += preview.map((r, i) => `<tr style="background:${i%2?'#f8f8f6':'#fff'}">` + cols.map((_, ci) => `<td style="padding:5px 10px;border-bottom:1px solid #eee;white-space:nowrap">${escHtml(String(r[ci] ?? ''))}</td>`).join('') + '</tr>').join('');
+      html += '</tbody>';
+      document.getElementById('ifood-xl-table').innerHTML = html;
+      document.getElementById('ifood-xl-preview').style.display = 'block';
+    }
+
+    const resumo = [];
+    if (main) resumo.push(`principal: ${main.filename} (${main.wb.SheetNames.length} abas)`);
+    if (_ifoodExcelData.decisoes.length) resumo.push(`${_ifoodExcelData.decisoes.length} de decisões`);
+    if (_ifoodExcelData.padrao.length) resumo.push(`${_ifoodExcelData.padrao.length} de padrão decisório`);
+    st.textContent = resumo.length
+      ? `✓ ${resumo.join(' · ')}. Selecione o período e clique em "Salvar dados no Supabase".`
+      : 'Nenhuma planilha reconhecida.';
   } catch(e) {
     st.textContent = 'Erro ao ler arquivo: ' + e.message;
     console.error(e);
@@ -13346,6 +13406,9 @@ const _XL_CR_CANON = {
   'ENTREGADOR OL': 'ENTREGADOR OL',
   'EX FOODLOVER': 'EX-FOODLOVER',
   'EX-FOODLOVER': 'EX-FOODLOVER',
+  'EX FL': 'EX-FOODLOVER',
+  'EX-FL': 'EX-FOODLOVER',
+  'EXFL': 'EX-FOODLOVER',
   'TERCEIRIZADO': 'TERCEIRIZAÇÃO',
   'TERCEIRIZADOS': 'TERCEIRIZAÇÃO',
   'TERCEIRIZACAO': 'TERCEIRIZAÇÃO',
@@ -13493,11 +13556,14 @@ function _xlParseIfood(rawRows) {
   }).filter(Boolean);
 }
 
-function _xlParseDecisoes(rawRows) {
+function _xlParseDecisoes(rawRows, headerRow) {
   // Detecta colunas pelo cabeçalho (row 0) ou usa fallback por posição
   // Formato com RECLAMANTE: 0=N°Processo, 1=RECLAMANTE, 2=TRT, 3=CAUSA RAIZ, 4=RESULTADO, 5=JUIZ, 6=VARA, 7=FUND_FAV, 8=FUND_DESF
   // Formato legado:          0=N°Processo, 1=TRT, 2=CAUSA RAIZ, 3=RESULTADO, 4=JUIZ, 5=VARA
+  // Coluna opcional "Reclamada(s)" / "Polo passivo" (localizada pelo cabeçalho): empresas do polo passivo
   const c = (r, i) => String(r[i] ?? '').trim();
+  const hdr = (headerRow || []).map(h => _xlNormTxt(h));
+  const iReclamada = hdr.findIndex(h => h.startsWith('RECLAMADA') || h.includes('POLO PASSIVO') || h.includes('EMPRESAS DO POLO'));
   // Detecta formato pelo primeiro dado: se col 2 parece TRT (número) ou causa raiz (texto)
   const firstData = rawRows.find(r => r && r[0] && String(r[0]).trim());
   const hasReclamante = firstData && /^\d+$/.test(String(firstData[2]||'').trim().replace(/[^\d]/g,'').slice(0,4));
@@ -13514,6 +13580,7 @@ function _xlParseDecisoes(rawRows) {
         varaturma:    c(r,6),
         fund_fav:     c(r,7),
         fund_desf:    c(r,8),
+        reclamada:    iReclamada >= 0 ? c(r,iReclamada) : '',
       };
     } else {
       return {
@@ -13527,9 +13594,70 @@ function _xlParseDecisoes(rawRows) {
         varaturma:    c(r,5),
         fund_fav:     '',
         fund_desf:    '',
+        reclamada:    iReclamada >= 0 ? c(r,iReclamada) : '',
       };
     }
   }).filter(r => r.causa_raiz);
+}
+
+// Planilha "Padrão Decisório" (base Toqan): aba "Base de decisões", uma linha por decisão,
+// e aba "Critérios" com os parâmetros do farol (B4 verde, B5 amarelo, B6 amostra mínima).
+function _xlParsePadraoDecisorio(wb) {
+  const shName = wb.SheetNames.find(n => _xlNormTxt(n).includes('BASE DE DECISOES'));
+  if (!shName) return { rows: [], cfg: null };
+  const raw = XLSX.utils.sheet_to_json(wb.Sheets[shName], { header: 1, defval: '' });
+  const hdrIdx = raw.findIndex(r => (r || []).some(c => _xlNormTxt(c).includes('PROCESSO')));
+  if (hdrIdx < 0) return { rows: [], cfg: null };
+  const hn = raw[hdrIdx].map(h => _xlNormTxt(h));
+  const col = (...pats) => { for (const p of pats) { const i = hn.findIndex(h => h.startsWith(_xlNormTxt(p))); if (i >= 0) return i; } return -1; };
+  const idx = {
+    proc: col('Nº do processo', 'N DO PROCESSO', 'PROCESSO'), vara: col('Vara'), trt: col('TRT'),
+    causa: col('Causa raiz'), tipo: col('Tipo'), juiz: col('Juiz', 'Relator'), data: col('Data'),
+    res: col('Resultado'), desfecho: col('Desfecho'), tema: col('Tema'), fund: col('Fundamento'),
+    ped: col('Pedidos deferidos'), ind: col('Pedidos indeferidos'),
+  };
+  const g = (r, i) => i >= 0 ? String(r[i] ?? '').trim() : '';
+  const lista = v => String(v || '').split(';').map(x => x.trim()).filter(Boolean);
+  const fmtData = v => {
+    if (v instanceof Date && !isNaN(v)) return v.toLocaleDateString('pt-BR');
+    if (typeof v === 'number' && v > 20000 && v < 80000) {
+      const d = new Date(Math.round((v - 25569) * 86400000));
+      return `${String(d.getUTCDate()).padStart(2,'0')}/${String(d.getUTCMonth()+1).padStart(2,'0')}/${d.getUTCFullYear()}`;
+    }
+    const m = String(v || '').match(/^(\d{4})-(\d{2})-(\d{2})/);
+    return m ? `${m[3]}/${m[2]}/${m[1]}` : String(v || '').trim();
+  };
+  const rows = raw.slice(hdrIdx + 1)
+    .filter(r => r && g(r, idx.proc) && g(r, idx.res))
+    .map(r => {
+      const resN = _xlNormTxt(g(r, idx.res));
+      const causaCanon = _xlCanonCR(g(r, idx.causa));
+      const tab = _XL_CR_TABS.find(t => t.cr === causaCanon);
+      return {
+        processo: g(r, idx.proc),
+        vara:     g(r, idx.vara),
+        trt:      _xlNormalizeTRT(g(r, idx.trt)),
+        causa:    tab ? tab.label : (g(r, idx.causa) || 'Não informada'),
+        tipo:     g(r, idx.tipo),
+        juiz:     g(r, idx.juiz) || 'Não informado',
+        data:     fmtData(idx.data >= 0 ? r[idx.data] : ''),
+        res:      resN.startsWith('DESF') ? 'DESF' : resN.startsWith('FAV') ? 'FAV' : 'NEUTRA',
+        desfecho: g(r, idx.desfecho),
+        tema:     g(r, idx.tema) || 'Outros temas',
+        fund:     g(r, idx.fund),
+        ped:      lista(g(r, idx.ped)),
+        ind:      lista(g(r, idx.ind)),
+      };
+    });
+  let cfg = null;
+  const crName = wb.SheetNames.find(n => _xlNormTxt(n).includes('CRITERIOS'));
+  if (crName) {
+    const ws = wb.Sheets[crName];
+    const num = a => { const c = ws[a]; const v = c ? parseFloat(String(c.v).replace(',', '.')) : NaN; return isNaN(v) ? null : v; };
+    cfg = { verde: num('B4'), amarelo: num('B5'), amostra: num('B6') };
+    if (cfg.verde === null && cfg.amarelo === null && cfg.amostra === null) cfg = null;
+  }
+  return { rows, cfg };
 }
 
 function _xlParseJulgadores(rawRows) {
@@ -14069,7 +14197,17 @@ function _xlParseAcordos(headerRow, rawRows) {
   }).filter(Boolean);
 }
 
-function _xlBuildKpiRows(periodId, records, decisoes, novos, suspensos1389, suspensos1391, suspensos300, decisoesTabela, julgadoresData, encerradosData, valoresElevadosData, prevPeriodData, acordosData) {
+function _xlPadraoKpiRow(periodId, padraoData, sortOrder) {
+  return {
+    id: ifoodId(), period_id: periodId, tab_key: 'visao-geral', kpi_key: 'table_padrao_decisorio',
+    label: 'Padrão Decisório', value: _xlFmtBr(padraoData.rows.length), unit: 'decisões',
+    chart_data: { type: 'padrao_decisorio', rows: padraoData.rows, cfg: padraoData.cfg || null, fonte: padraoData.fonte || '' },
+    chart_title: 'Padrão Decisório — Juízes e Desembargadores por Causa Raiz',
+    sort_order: sortOrder, trend_pct: null,
+  };
+}
+
+function _xlBuildKpiRows(periodId, records, decisoes, novos, suspensos1389, suspensos1391, suspensos300, decisoesTabela, julgadoresData, encerradosData, valoresElevadosData, prevPeriodData, acordosData, suspensos59, padraoData) {
   // decisoesTabela: decisões do arquivo separado — aparecem apenas nas tabelas, não nos contadores
   // julgadoresData: linhas da aba Julgadores — usadas para table_fund_vg
   decisoesTabela    = decisoesTabela    || [];
@@ -14085,6 +14223,7 @@ function _xlBuildKpiRows(periodId, records, decisoes, novos, suspensos1389, susp
   const susp1389 = suspensos1389 || [];
   const susp1291 = suspensos1391 || [];
   const susp300  = suspensos300  || [];
+  const susp59   = suspensos59   || [];
 
   // ── VISÃO GERAL ──────────────────────────────────────────────────────────────
   const total  = records.length;
@@ -14595,7 +14734,8 @@ function _xlBuildKpiRows(periodId, records, decisoes, novos, suspensos1389, susp
     const tSusp1291 = susp1291.filter(s=>_xlCanonCR(String(s.causa_raiz||''))===cr);
     // Tema 300 é exclusivo da aba Ex-Foodlover — não filtra por causa raiz da linha
     const tSusp300  = cr === 'EX-FOODLOVER' ? susp300 : [];
-    const tSusp = tSusp1389.length + tSusp1291.length + tSusp300.length;
+    const tSusp59   = susp59.filter(s=>_xlCanonCR(String(s.causa_raiz||''))===cr);
+    const tSusp = tSusp1389.length + tSusp1291.length + tSusp300.length + tSusp59.length;
     if (!recs.length && !decs.length && !tSusp) continue;
     const ta = recs.filter(r=>r.status==='ativo').length;
     const te = recs.filter(r=>r.status==='encerrado').length;
@@ -14608,11 +14748,12 @@ function _xlBuildKpiRows(periodId, records, decisoes, novos, suspensos1389, susp
     if(tSusp>0) push(tabKey,'suspensos','Processos Suspensos',_xlFmtBr(tSusp),'suspensos');
 
     // Tabela de suspensos por tema
-    if (tSusp1389.length || tSusp1291.length || tSusp300.length) {
+    if (tSusp) {
       const _suspRows = [
         ...tSusp1389.map(s => ({ reclamante: s.reclamante, processo: s.processo, trt: s.trt, tribunal: s.tribunal, turma: s.turma, relator: s.relator, tema: '1389', obs: s.obs })),
         ...tSusp1291.map(s => ({ reclamante: s.reclamante, processo: s.processo, trt: s.trt, tribunal: s.tribunal, turma: s.turma, relator: s.relator, tema: '1291', obs: s.obs })),
         ...tSusp300.map(s => ({ reclamante: s.reclamante, processo: s.processo, trt: s.trt, tribunal: s.tribunal, turma: s.turma, relator: s.relator, tema: '300', obs: s.obs })),
+        ...tSusp59.map(s => ({ reclamante: s.reclamante, processo: s.processo, trt: s.trt, tribunal: s.tribunal, turma: s.turma, relator: s.relator, tema: '59', obs: s.obs })),
       ];
       push(tabKey, 'table_suspensos_cr', `Suspensos por Tema (${tSusp})`, '', '',
         { type: 'table_suspensos', rows: _suspRows },
@@ -14740,6 +14881,34 @@ function _xlBuildKpiRows(periodId, records, decisoes, novos, suspensos1389, susp
       }
     }
 
+    // Tabela de decisões com as empresas do polo passivo — somente Terceirização.
+    // Usa a coluna "Reclamada" da planilha de decisões; sem ela, os co-réus da planilha principal.
+    if (tabKey === 'terceirizacao') {
+      const _procKey = v => String(v || '').replace(/\D/g, '');
+      const coReusByProc = new Map();
+      recs.forEach(r => { if (r.co_reus) coReusByProc.set(_procKey(r.num_processo), r.co_reus); });
+      const tercDecs = decisoesTodasTabelas.filter(d => d.causa_raiz === 'TERCEIRIZAÇÃO');
+      if (tercDecs.length) {
+        push(tabKey,'table_dec_terc','Decisões — Empresas no Polo Passivo','','',{
+          type:'table_decisions',
+          show_reclamadas: true,
+          rows: tercDecs.map(d => ({
+            num_processo: d.num_processo,
+            reclamante:   d.reclamante,
+            trt:          d.trt,
+            resultado:    d.resultado,
+            tipo:         d.tipo,
+            classe:       _xlClassifyDec(d.resultado),
+            juiz_relator: d.juiz_relator,
+            varaturma:    d.varaturma,
+            fund_fav:     d.fund_fav || '',
+            fund_desf:    d.fund_desf || '',
+            reclamadas:   _xlParseEntityList(d.reclamada || coReusByProc.get(_procKey(d.num_processo)) || ''),
+          }))
+        }, 'Decisões do Período — Empresas no Polo Passivo');
+      }
+    }
+
     // Pedidos ranking — somente Ex-Foodlover
     if (tabKey === 'ex-foodlover') {
       const pedC = {};
@@ -14770,6 +14939,11 @@ function _xlBuildKpiRows(periodId, records, decisoes, novos, suspensos1389, susp
     }
   }
 
+  // Padrão decisório (planilha base Toqan) — visão geral
+  if (padraoData && Array.isArray(padraoData.rows) && padraoData.rows.length) {
+    rows.push(_xlPadraoKpiRow(periodId, padraoData, so++));
+  }
+
   // Tabela de acordos — visão geral (exclusivamente aba ACORDOS)
   if (acordosData.length) {
     push('visao-geral', 'table_acordos', 'Acordos Realizados no Mês', _xlFmtBr(acordosData.length), 'acordos',
@@ -14787,9 +14961,57 @@ async function ifoodSaveExcel() {
   if (!periodId) { showToast('Selecione um período.'); return; }
   const st = document.getElementById('ifood-xl-status');
   const setStatus = msg => { st.style.display='block'; st.textContent=msg; };
+  const { main, decisoes: decFiles, padrao: padFiles } = _ifoodExcelData;
+  if (!main && !padFiles.length) { showToast('Selecione a planilha principal ou a do padrão decisório.'); return; }
+
+  // Padrão decisório: junta todas as planilhas enviadas (sem duplicar a mesma decisão)
+  let padraoData = null;
+  if (padFiles.length) {
+    const seen = new Set(), rows = [];
+    let cfg = null;
+    padFiles.forEach(pf => {
+      const parsed = _xlParsePadraoDecisorio(pf.wb);
+      if (!cfg && parsed.cfg) cfg = parsed.cfg;
+      parsed.rows.forEach(r => {
+        const k = [r.processo, r.data, r.juiz, r.res].join('|');
+        if (!seen.has(k)) { seen.add(k); rows.push(r); }
+      });
+    });
+    padraoData = { rows, cfg, fonte: padFiles.map(pf => pf.filename).join(', ') };
+    if (!rows.length) { setStatus('A planilha do padrão decisório não tem decisões preenchidas na aba "Base de decisões".'); if (!main) return; padraoData = null; }
+  }
+
+  // Só o padrão decisório: atualiza apenas essa tabela, sem mexer nos demais dados do período
+  if (!main) {
+    try {
+      setStatus(`Salvando padrão decisório (${padraoData.rows.length} decisões)…`);
+      const { data: cur, error: curErr } = await ifoodApi('/api/ifood/kpis?periodId=' + encodeURIComponent(periodId) + '&tabKey=visao-geral');
+      if (curErr) throw new Error(curErr.message);
+      const vg = Array.isArray(cur) ? cur : [];
+      const old = vg.find(k => k.kpi_key === 'table_padrao_decisorio');
+      const acordos = vg.find(k => k.kpi_key === 'table_acordos');
+      let sortOrder;
+      if (old) sortOrder = old.sort_order;
+      else if (acordos) {
+        sortOrder = acordos.sort_order;
+        await ifoodApi('/api/ifood/kpis/' + encodeURIComponent(acordos.id), { method: 'PATCH', body: JSON.stringify({ sort_order: acordos.sort_order + 1 }) });
+      } else sortOrder = vg.reduce((m, k) => Math.max(m, k.sort_order || 0), 0) + 1;
+      const row = _xlPadraoKpiRow(periodId, padraoData, sortOrder);
+      if (old) row.id = old.id;
+      const { error } = await ifoodApi('/api/ifood/kpis/bulk', { method: 'POST', body: JSON.stringify({ rows: [row] }) });
+      if (error) throw new Error(error.message);
+      setStatus(`✓ Padrão decisório salvo: ${padraoData.rows.length} decisões na Visão Geral. Os demais dados do período não foram alterados.`);
+      showToast('Padrão decisório atualizado!');
+    } catch (e) {
+      setStatus('Erro: ' + e.message);
+      console.error(e);
+      showToast('Erro ao salvar o padrão decisório.');
+    }
+    return;
+  }
 
   try {
-    const { wb, filename, file } = _ifoodExcelData;
+    const { wb, filename, file } = main;
     const findSh = (...names) => { for (const n of names) { const f=wb.SheetNames.find(s=>s.toLowerCase().includes(n.toLowerCase())); if(f) return wb.Sheets[f]; } return null; };
 
     setStatus('Lendo aba IFOOD…');
@@ -14802,24 +15024,19 @@ async function ifoodSaveExcel() {
 
     // Verifica se foi carregado arquivo de decisões separado
     // Decisões da planilha principal — usadas em contagens e gráficos
-    let decisoes = decSh
-      ? _xlParseDecisoes(XLSX.utils.sheet_to_json(decSh,{header:1,defval:''}).slice(1))
-      : [];
-    // Decisões do arquivo separado — apenas para tabelas demonstrativas (não contam nos KPIs)
+    const decMainRaw = decSh ? XLSX.utils.sheet_to_json(decSh,{header:1,defval:''}) : [];
+    let decisoes = decSh ? _xlParseDecisoes(decMainRaw.slice(1), decMainRaw[0]) : [];
+    // Decisões dos arquivos separados — apenas para tabelas demonstrativas (não contam nos KPIs)
     let decisoesTabela = [];
-    const decFileInput = document.getElementById('ifood-xl-decisoes');
-    const decFile = decFileInput && decFileInput.files && decFileInput.files[0];
-    if (decFile) {
-      setStatus('Lendo arquivo de Decisões separado…');
-      const decAb = await decFile.arrayBuffer();
-      const decWb = XLSX.read(decAb, { type:'array' });
-      const decShSep = decWb.Sheets[decWb.SheetNames[0]];
+    for (const df of decFiles) {
+      setStatus(`Lendo arquivo de Decisões separado (${df.filename})…`);
+      const decShSep = df.wb.Sheets[df.wb.SheetNames[0]];
       const decRaw = XLSX.utils.sheet_to_json(decShSep, { header:1, defval:'' });
       const firstRow = decRaw[0] || [];
       const skipHeader = firstRow[0] && !/^\d/.test(String(firstRow[0]).trim());
-      decisoesTabela = _xlParseDecisoes(skipHeader ? decRaw.slice(1) : decRaw);
-      setStatus(`Decisões: ${decisoes.length} (planilha principal) + ${decisoesTabela.length} (arquivo separado — só tabela)`);
+      decisoesTabela = decisoesTabela.concat(_xlParseDecisoes(skipHeader ? decRaw.slice(1) : decRaw, skipHeader ? firstRow : null));
     }
+    if (decFiles.length) setStatus(`Decisões: ${decisoes.length} (planilha principal) + ${decisoesTabela.length} (arquivo(s) separado(s) — só tabela)`);
 
     const novosSh = findSh('Novos Casos Recebidos','Novos Casos','novos');
     const novos = novosSh ? _xlParseNovos(XLSX.utils.sheet_to_json(novosSh,{header:1,defval:''})) : { total:0, byCR:{} };
@@ -14840,6 +15057,9 @@ async function ifoodSaveExcel() {
     const susp300Sh = findSh('Suspensos Tema 300','300','susp 300','suspensos 300','tema 300');
     const susp300 = susp300Sh ? _xlParseSuspensos(XLSX.utils.sheet_to_json(susp300Sh,{header:1,defval:''})) : [];
     console.log('[ifoodSave] susp300Sh encontrado:', !!susp300Sh, '| linhas:', susp300.length);
+
+    const susp59Sh = findSh('Suspensos Tema 59','Tema 59','Susp 59','Suspensos 59');
+    const susp59 = susp59Sh ? _xlParseSuspensos(XLSX.utils.sheet_to_json(susp59Sh,{header:1,defval:''})) : [];
 
     const encSh = findSh('ENCERRADOS','Encerrados','encerrados');
     const encerradosData = encSh ? _xlParseEncerrados(XLSX.utils.sheet_to_json(encSh,{header:1,defval:''}).slice(1)) : [];
@@ -14936,7 +15156,19 @@ async function ifoodSaveExcel() {
       setIfNotNull('m4_economia',   gf('m4_economia'));
     }
 
-    const kpiRows = _xlBuildKpiRows(periodId, records, decisoes, novos, susp1389, susp1291, susp300, decisoesTabela, julgadoresData, encerradosData, valoresElevadosData, prevPeriodData, acordosData);
+    // Sem planilha nova de padrão decisório: mantém a tabela já salva no período
+    if (!padraoData) {
+      try {
+        const { data: vgKpis } = await ifoodApi('/api/ifood/kpis?periodId=' + encodeURIComponent(periodId) + '&tabKey=visao-geral');
+        const old = Array.isArray(vgKpis) ? vgKpis.find(k => k.kpi_key === 'table_padrao_decisorio') : null;
+        if (old && old.chart_data) {
+          const cd = typeof old.chart_data === 'string' ? JSON.parse(old.chart_data) : old.chart_data;
+          padraoData = { rows: cd.rows || [], cfg: cd.cfg || null, fonte: cd.fonte || '' };
+        }
+      } catch (e) { console.warn('padrão decisório existente:', e.message); }
+    }
+
+    const kpiRows = _xlBuildKpiRows(periodId, records, decisoes, novos, susp1389, susp1291, susp300, decisoesTabela, julgadoresData, encerradosData, valoresElevadosData, prevPeriodData, acordosData, susp59, padraoData);
 
     // Upload do arquivo Excel bruto para Cockroach (quando API configurada)
     let ifoodExcelFileUrl = null;
