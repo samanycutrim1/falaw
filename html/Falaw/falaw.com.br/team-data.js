@@ -46,15 +46,6 @@ var FALAW_TEAM = [
     "status": "active"
   },
   {
-    "id": "ms7qfj76uqkl",
-    "name": "Karolina Giansante",
-    "sigla": "KCG",
-    "email": "karolina@falaw.com.br",
-    "role": "Advogada",
-    "bio": "Especialista em Direito Material e Processual do Trabalho pela PUC-SP e em Compliance e Gestão de Riscos pela Faculdade Legale. Mais de dez anos em atuação no contencioso trabalhista estratégico empresarial e na consultoria preventiva a empregadores. Conduz demandas de alta complexidade perante os TRTs e o TST.",
-    "status": "active"
-  },
-  {
     "id": "mn1yd8t2i1lh",
     "name": "Letícia Silva",
     "role": "Advogada Controller",
