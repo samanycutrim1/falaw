@@ -10,15 +10,6 @@ var FALAW_TEAM = [
     "sigla": "FERRAZ"
   },
   {
-    "id": "mn1yd8t2ymn4",
-    "name": "Camilla Martinez",
-    "role": "Advogada",
-    "status": "active",
-    "bio": "Graduada em Direito e pós-graduanda em Direito e Processo do Trabalho pela PUC-RS. Atua no contencioso trabalhista com experiência em acompanhamento processual, suporte à litigância e organização de rotinas jurídicas. Integra o Comitê de Inteligência Artificial do escritório.",
-    "email": "camilla@falaw.com.br",
-    "sigla": "CMM"
-  },
-  {
     "id": "ms7pd1i3v205",
     "name": "Cássia Ferreira",
     "sigla": "COF",
