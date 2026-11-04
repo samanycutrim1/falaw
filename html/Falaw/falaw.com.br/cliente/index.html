@@ -423,7 +423,7 @@ async function handleLogin(e) {
 
   // Login especial: escritório de audiências
   if (email === 'audiencias@falaw.com.br') {
-    const HASH_ESC = window.SB_ESCRITORIO_PWD_HASH || 'f8678a58d79ec24c0fa3e8d12e12616d8348c2ae9ac7ce2443e79e0d92387d77';
+    const HASH_ESC = window.SB_ESCRITORIO_PWD_HASH || 'b4eb89f661687c4f1896df9c720b43f6dc34f58b165d89898f9ca03db44fc717';
     const inputHash = await _sha256(code);
     if (inputHash === HASH_ESC) {
       _setCLILock({ attempts: 0, lockedUntil: 0 });
