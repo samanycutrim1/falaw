@@ -4765,6 +4765,7 @@ window._liveCurrentTab = 'blog';
 const LIVE_TABLE_TABS = {
   pauta_audiencias: ['audiencias', 'financeiro'],
   mencoes:          ['audiencias'],
+  pauta_chat_corr:  ['audiencias'],
   correspondentes:  ['audiencias', 'correspondentes', 'financeiro'],
   equipe:           ['audiencias'],
   clients:          ['clientes', 'cli-dash'],
@@ -4875,13 +4876,14 @@ function _liveReloadPreservingScroll(reloadFn, presetScroll) {
 async function _liveAudSignature() {
   const sb = getSB();
   if (!sb) return null;
-  const [{ data: lastAud }, { count: audCount }, { count: mencaoCount }] = await Promise.all([
+  const [{ data: lastAud }, { count: audCount }, { count: mencaoCount }, chatRes] = await Promise.all([
     sb.from('pauta_audiencias').select('id,updated_at').order('updated_at', { ascending: false }).limit(1),
     sb.from('pauta_audiencias').select('id', { count: 'exact', head: true }),
     sb.from('mencoes').select('id', { count: 'exact', head: true }).is('lida_at', null),
+    sb.from('pauta_chat_corr').select('id', { count: 'exact', head: true }),
   ]);
   const last = (lastAud && lastAud[0]) ? `${lastAud[0].id}|${lastAud[0].updated_at}` : '';
-  return `${last}|${audCount}|${mencaoCount}`;
+  return `${last}|${audCount}|${mencaoCount}|${(chatRes && chatRes.count) || 0}`;
 }
 const LIVE_TAB_SIGNATURES = {
   audiencias: _liveAudSignature,
@@ -15861,6 +15863,99 @@ function audObsRenderThread(id) {
   if (box) box.style.display = obs.trim() ? '' : 'none';
 }
 
+/* ── Chat com a Administradora de Correspondentes (por audiência) ──
+   Tabela pauta_chat_corr. Ela só vê a conversa a partir da 1ª mensagem do escritório
+   que a marcou com @Administradora (ou @ + nome dela); antes disso nada vai para ela. */
+function _corrChatTokens() {
+  const tk = ['administradora'];
+  (window._audCorrespondentes || []).filter(c => c.tipo === 'admin').forEach(c => {
+    const n = (c.nome || '').trim().toLowerCase();
+    if (n) { tk.push(n); tk.push(n.split(/\s+/)[0]); }
+  });
+  return [...new Set(tk)];
+}
+function _corrChatMarca(msg) {
+  return _corrChatTokens().some(t => new RegExp('@' + _mencaoEscapeRe(t) + '(?![\\p{L}\\d])', 'iu').test(msg || ''));
+}
+function _corrChatAberto(id) {
+  return (window._corrChat && window._corrChat[id] || []).find(r => r.origem === 'falaw' && r.marca_corr) || null;
+}
+function _corrChatFmt(iso) {
+  const d = new Date(iso), p = n => String(n).padStart(2, '0');
+  return `${p(d.getDate())}/${p(d.getMonth()+1)}/${String(d.getFullYear()).slice(2)} ${p(d.getHours())}:${p(d.getMinutes())}`;
+}
+function _corrChatThreadHtml(id) {
+  const rows = (window._corrChat && window._corrChat[id]) || [];
+  const aberto = _corrChatAberto(id);
+  const status = aberto
+    ? `<div style="font-family:var(--f-mono);font-size:8px;color:#1B7A4E;margin-bottom:2px">🔓 Visível para a administradora desde ${_corrChatFmt(aberto.created_at)}</div>`
+    : `<div style="font-family:var(--f-mono);font-size:8px;color:#9CA3AF;margin-bottom:2px">🔒 A administradora ainda não vê esta conversa — marque <b>@Administradora</b> para abrir o chat para ela.</div>`;
+  const msgs = rows.map(r => {
+    const ela = r.origem === 'corr_admin';
+    const visivel = ela || (aberto && r.created_at >= aberto.created_at);
+    let txt = _escHtml(r.texto);
+    _corrChatTokens().forEach(t => { txt = txt.replace(new RegExp('@' + _mencaoEscapeRe(_escHtml(t)) + '(?![\\p{L}\\d])', 'giu'), m => `<span style="background:#FEF3C7;color:#92400e;border-radius:3px;padding:0 3px;font-weight:700">${m}</span>`); });
+    return `<div style="background:#fff;border-left:2px solid ${ela ? '#B45309' : '#0D2B5E'};border-radius:3px;padding:5px 8px;margin-top:4px;display:flex;gap:6px;align-items:flex-start;${visivel ? '' : 'opacity:.65'}">`
+      + `<div style="flex:1;min-width:0"><div style="font-family:var(--f-mono);font-size:8px;letter-spacing:.05em;text-transform:uppercase;color:#6B7280;margin-bottom:2px">${_corrChatFmt(r.created_at)} · ${_escHtml(r.autor || (ela ? 'Administradora' : 'Admin'))}${visivel ? '' : ' · interno (ela não vê)'}</div>`
+      + `<div style="font-family:var(--f-mono);font-size:10px;letter-spacing:.04em;color:#0D2B5E;white-space:pre-wrap">${txt}</div></div>`
+      + (ela ? '' : `<button onclick="corrChatDelete('${_escHtml(id)}',${r.id})" title="Excluir esta mensagem" style="background:none;border:none;color:#9CA3AF;font-size:11px;line-height:1;cursor:pointer;padding:2px 3px;flex-shrink:0">✕</button>`)
+      + `</div>`;
+  }).join('');
+  return status + msgs;
+}
+function _corrChatBlockHtml(id) {
+  const rows = (window._corrChat && window._corrChat[id]) || [];
+  const last = rows[rows.length - 1];
+  const resp = last && last.origem === 'corr_admin' ? ' · <span style="color:#B45309">← resposta da administradora</span>' : '';
+  const eid = _escHtml(id);
+  return `<details style="border-top:1px solid #f3f4f6;margin-top:12px;padding-top:10px"${rows.length ? ' open' : ''}>
+    <summary style="cursor:pointer;font-family:var(--f-mono);font-size:9px;letter-spacing:.07em;text-transform:uppercase;color:#B45309;font-weight:700">💬 Chat com a Administradora de Correspondentes${rows.length ? ` (${rows.length})` : ''}${resp}</summary>
+    <div id="aud-corr-th-${eid}" style="background:#FFFBEB;border-radius:4px;padding:6px 8px 8px;margin-top:6px">${_corrChatThreadHtml(id)}</div>
+    <textarea id="aud-corr-ta-${eid}" rows="2" placeholder="Mensagem para a administradora… (escreva @Administradora para ela receber o chat)" style="width:100%;margin-top:6px;font-size:10px;padding:6px 8px;border:1px solid #e5e7eb;border-radius:5px;resize:vertical;font-family:inherit;color:#374151;background:#fff;box-sizing:border-box"></textarea>
+    <div style="display:flex;gap:8px;justify-content:flex-end;flex-wrap:wrap;margin-top:6px">
+      <button type="button" onclick="corrChatInserirTag('${eid}')" style="background:#FEF3C7;border:1px solid #FDE68A;border-radius:4px;color:#92400e;font-size:10px;font-family:var(--f-mono);letter-spacing:.06em;padding:6px 10px;cursor:pointer;font-weight:700">@ Marcar administradora</button>
+      <button type="button" onclick="corrChatSend('${eid}')" style="background:#B45309;border:none;border-radius:4px;color:#fff;font-size:10px;font-family:var(--f-mono);letter-spacing:.06em;text-transform:uppercase;padding:7px 14px;cursor:pointer;font-weight:700">➤ Enviar</button>
+    </div>
+  </details>`;
+}
+function corrChatRender(id) {
+  const th = document.getElementById('aud-corr-th-' + id);
+  if (th) th.innerHTML = _corrChatThreadHtml(id);
+}
+function corrChatInserirTag(id) {
+  const ta = document.getElementById('aud-corr-ta-' + id);
+  if (!ta) return;
+  if (!_corrChatMarca(ta.value)) ta.value = ('@Administradora ' + ta.value).trimEnd() + ' ';
+  ta.focus();
+}
+function _corrChatSb() {
+  const { sbUrl, sbKey } = getSbCreds();
+  if (!sbUrl || !sbKey) return null;
+  return supabase.createClient(sbUrl, sbKey, { global: { headers: { 'X-Client-App': 'admin' } } });
+}
+async function corrChatSend(id) {
+  const ta = document.getElementById('aud-corr-ta-' + id);
+  const msg = ta && ta.value.trim();
+  if (!msg) return;
+  const sb = _corrChatSb();
+  if (!sb) { showToast('Supabase não configurado.'); return; }
+  const { data, error } = await sb.from('pauta_chat_corr').insert({ audiencia_id: id, origem: 'falaw', autor: 'Admin', texto: msg, marca_corr: _corrChatMarca(msg) }).select().single();
+  if (error) { showToast('Erro ao enviar (a tabela pauta_chat_corr existe? rode a migration 20261104): ' + error.message); return; }
+  (window._corrChat = window._corrChat || {});
+  (window._corrChat[id] = window._corrChat[id] || []).push(data);
+  ta.value = '';
+  corrChatRender(id);
+}
+async function corrChatDelete(id, rowId) {
+  if (!confirm('Excluir esta mensagem do chat?')) return;
+  const sb = _corrChatSb();
+  if (!sb) return;
+  const { error } = await sb.from('pauta_chat_corr').delete().eq('id', rowId);
+  if (error) { showToast('Erro ao excluir: ' + error.message); return; }
+  window._corrChat[id] = (window._corrChat[id] || []).filter(r => r.id !== rowId);
+  corrChatRender(id);
+}
+
 async function audObsSend(id) {
   const ta = document.getElementById('aud-obs-' + id);
   if (!ta) return;
@@ -16071,6 +16166,7 @@ function _audCard(a) {
         ${(a.advogado || a.dados_preposto || a.valor_advogado != null || a.valor_preposto != null) ? `<button class="btn btn-ghost btn-sm" style="color:#B45309;border-color:#FDE68A;background:#FFFBEB;font-size:9px;justify-content:center" onclick="_audLimparCorr('${_escHtml(a.id)}')" title="Limpar advogado, preposto e valores atribuídos pelo admin de correspondentes">🗑 Limpar Corr.</button>` : ''}
       </div>
     </div>
+    ${_corrChatBlockHtml(a.id)}
     <!-- controle de orientação -->
     <div style="border-top:1px solid #f3f4f6;margin-top:12px;padding-top:12px">
       <textarea id="aud-obs-${_escHtml(a.id)}" placeholder="Nova mensagem… (as anteriores ficam no histórico acima; digite @ para mencionar)" rows="2" oninput="_mencaoOnInput(this)" onkeydown="_mencaoOnKeydown(event,this)"
@@ -16326,12 +16422,15 @@ async function loadAudiencias(silent) {
         .order('horario',       { ascending: true });
       if (qDe)  q = q.gte('data_audiencia', qDe);
       if (qAte) q = q.lte('data_audiencia', qAte);
-      const [{ data, error }, corrRes, equipeRes, mencaoRes] = await Promise.all([
+      const [{ data, error }, corrRes, equipeRes, mencaoRes, chatRes] = await Promise.all([
         q,
         sb.from('correspondentes').select('nome,tipo,email,celular,cpf,oab,observacoes'),
         sb.from('equipe').select('id,nome,sigla').order('nome', { ascending: true }),
         sb.from('mencoes').select('*').is('lida_at', null).order('created_at', { ascending: false }).limit(200),
+        sb.from('pauta_chat_corr').select('*').order('created_at', { ascending: true }),
       ]);
+      window._corrChat = {};
+      (chatRes && !chatRes.error && chatRes.data || []).forEach(r => { (window._corrChat[r.audiencia_id] = window._corrChat[r.audiencia_id] || []).push(r); });
       if (error) console.warn('audiencias load error:', error.message);
       if (!error && data) items = data;
       window._audCorrespondentes = corrRes.data || [];
