@@ -2966,11 +2966,6 @@ Ex: 0020123-64.2024.5.04.0382 - JOÃO SILVA (Deserção)"></textarea>
             <input type="text" id="cfg-gas-url" placeholder="https://script.google.com/macros/s/.../exec" autocomplete="off" />
             <p class="cfg-hint" style="margin-top:6px;">Cole aqui a URL do Apps Script implantado na conta <strong>ferrazandrade@falaw.com.br</strong>. Usado para enviar notificações e newsletters diretamente pelo Gmail da Falaw.</p>
           </div>
-          <div class="form-field">
-            <label>Senha do Escritório — <span style="font-weight:400;font-size:11px;font-family:var(--f-mono)">audiencias@falaw.com.br</span></label>
-            <input type="password" id="cfg-escritorio-pwd" placeholder="Senha atual" autocomplete="new-password" maxlength="128" />
-            <p class="cfg-hint" style="margin-top:6px;">Senha de acesso ao painel do escritório (pauta completa de todos os clientes). Padrão: <code>Falawaud@2026</code>.</p>
-          </div>
           <div style="display:flex;gap:10px;flex-wrap:wrap;margin-top:4px;">
             <button type="button" class="btn btn-primary" onclick="saveConfig()">Salvar chaves</button>
             <button type="button" class="btn btn-secondary" onclick="testAPIs()">Testar conexões</button>
@@ -3300,7 +3295,7 @@ Ex: 0020123-64.2024.5.04.0382 - JOÃO SILVA (Deserção)"></textarea>
 /* ══════════════════════════════════════
    CONSTANTS
 ══════════════════════════════════════ */
-const ADMIN_PASSWORD_DEFAULT = 'falaw2026';
+const ADMIN_PASSWORD_DEFAULT_HASH = '55d6be5aa2c40b4014af2b487e591820de941232f0f9446fba32348a32c03863'; // SHA-256(senha + salt); senha nunca fica em texto puro
 const _PWD_SALT = 'falaw_adv_2026';
 const GITHUB_OWNER  = 'samany-cutrim';
 const GITHUB_REPO   = 'falaw';
@@ -3814,7 +3809,7 @@ async function _getStoredHash() {
   }
 
   // Migração: hash do padrão e armazena (remove plaintext antigo)
-  const h = await _sha256(ADMIN_PASSWORD_DEFAULT);
+  const h = ADMIN_PASSWORD_DEFAULT_HASH;
   localStorage.setItem(KEYS.adminPwdHash, h);
   localStorage.removeItem('fa_admin_pwd'); // remove versão plaintext legada
   await sbWriteAdminPasswordHash(h);
@@ -6005,7 +6000,6 @@ function loadConfig() {
   document.getElementById('cfg-linkedin').value     = cfg.linkedin  || '';
   document.getElementById('cfg-github-token').value = ghToken();
   document.getElementById('cfg-gas-url').value = localStorage.getItem('fa_gas_url') || window.SB_GAS_URL || '';
-  document.getElementById('cfg-escritorio-pwd').value = localStorage.getItem('fa_escritorio_pwd') || window.SB_ESCRITORIO_PWD || '';
   document.getElementById('cfg-openai-key').value = localStorage.getItem('fa_openai_key') || '';
   document.getElementById('cfg-pexels-key').value = localStorage.getItem('fa_pexels_key') || '';
   document.getElementById('cfg-gemini-key').value = localStorage.getItem('fa_gemini_key') || '';
@@ -6018,7 +6012,6 @@ function loadConfig() {
   if (!localStorage.getItem('fa_supabase_url') && window.SB_URL)           localStorage.setItem('fa_supabase_url',   window.SB_URL);
   if (!localStorage.getItem('fa_supabase_key') && window.SB_KEY)           localStorage.setItem('fa_supabase_key',   window.SB_KEY);
   if (!localStorage.getItem('fa_gas_url')      && window.SB_GAS_URL)       localStorage.setItem('fa_gas_url',        window.SB_GAS_URL);
-  if (!localStorage.getItem('fa_escritorio_pwd') && window.SB_ESCRITORIO_PWD) localStorage.setItem('fa_escritorio_pwd', window.SB_ESCRITORIO_PWD);
   if (!localStorage.getItem(AUTH_EMAIL_KEY)    && window.SB_ADMIN_EMAIL)   localStorage.setItem(AUTH_EMAIL_KEY,      window.SB_ADMIN_EMAIL);
 }
 
@@ -6076,8 +6069,6 @@ function saveConfig() {
   else localStorage.removeItem(KEYS.githubToken);
   const gasUrl = document.getElementById('cfg-gas-url').value.trim();
   if (gasUrl) localStorage.setItem('fa_gas_url', gasUrl); else localStorage.removeItem('fa_gas_url');
-  const escritorioPwd = document.getElementById('cfg-escritorio-pwd').value.trim();
-  if (escritorioPwd) localStorage.setItem('fa_escritorio_pwd', escritorioPwd); else localStorage.removeItem('fa_escritorio_pwd');
   const geminiKey = document.getElementById('cfg-gemini-key').value.trim();
   if (geminiKey) localStorage.setItem('fa_gemini_key', geminiKey); else localStorage.removeItem('fa_gemini_key');
   const openaiKey = document.getElementById('cfg-openai-key').value.trim();
@@ -6097,8 +6088,7 @@ function saveConfig() {
   if (sbUrlVal && sbKeyVal && token) {
     const escCfg = (v) => String(v || '').replace(/\\/g, '\\\\').replace(/'/g, "\\'");
     const gasUrl2 = localStorage.getItem('fa_gas_url') || '';
-    const escritorioPwd2 = localStorage.getItem('fa_escritorio_pwd') || 'Falawaud@2026';
-    const sbCfg = `/* sb-config.js — gerado pelo admin Falaw. */\nwindow.SB_URL='${escCfg(sbUrlVal)}';\nwindow.SB_KEY='${escCfg(sbKeyVal)}';\nwindow.SB_GAS_URL='${escCfg(gasUrl2)}';\nwindow.SB_ADMIN_EMAIL='${escCfg(authEmail)}';\nwindow.SB_ESCRITORIO_PWD='${escCfg(escritorioPwd2)}';\n`;
+    const sbCfg = `/* sb-config.js — gerado pelo admin Falaw. */\nwindow.SB_URL='${escCfg(sbUrlVal)}';\nwindow.SB_KEY='${escCfg(sbKeyVal)}';\nwindow.SB_GAS_URL='${escCfg(gasUrl2)}';\nwindow.SB_ADMIN_EMAIL='${escCfg(authEmail)}';\n`;
     _ghPush('html/Falaw/falaw.com.br/sb-config.js', sbCfg, null, 'Admin: update Supabase config')
       .then(sha => { if (sha) showToast('✓ Configurações salvas e sb-config.js publicado.'); else showToast('Configurações salvas.'); });
   } else {
