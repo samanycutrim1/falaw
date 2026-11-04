@@ -15866,8 +15866,9 @@ function audObsRenderThread(id) {
 /* ── Chat com a Administradora de Correspondentes (por audiência) ──
    Tabela pauta_chat_corr. Ela só vê a conversa a partir da 1ª mensagem do escritório
    que a marcou com @Administradora (ou @ + nome dela); antes disso nada vai para ela. */
+const _CORR_ADMIN_NOME = 'Fernanda Rodrigues';
 function _corrChatTokens() {
-  const tk = ['administradora'];
+  const tk = ['administradora', _CORR_ADMIN_NOME.toLowerCase(), _CORR_ADMIN_NOME.split(' ')[0].toLowerCase()];
   (window._audCorrespondentes || []).filter(c => c.tipo === 'admin').forEach(c => {
     const n = (c.nome || '').trim().toLowerCase();
     if (n) { tk.push(n); tk.push(n.split(/\s+/)[0]); }
@@ -15886,7 +15887,7 @@ function _corrChatFmt(iso) {
 }
 function _corrChatThreadHtml(id) {
   const rows = (window._corrChat && window._corrChat[id]) || [];
-  const status = `<div style="font-family:var(--f-mono);font-size:8px;color:#6B7280;margin-bottom:2px">🔒 A administradora só vê as mensagens em que for marcada com <b>@Administradora</b>. As demais são internas (Admin e Audiências).</div>`;
+  const status = `<div style="font-family:var(--f-mono);font-size:8px;color:#6B7280;margin-bottom:2px">🔒 A administradora só vê as mensagens em que for marcada com <b>@Fernanda Rodrigues</b>. As demais são internas (Admin e Audiências).</div>`;
   const msgs = rows.map(r => {
     const ela = r.origem === 'corr_admin';
     const visivel = ela || r.marca_corr;
@@ -15908,9 +15909,9 @@ function _corrChatBlockHtml(id) {
   return `<details style="border-top:1px solid #f3f4f6;margin-top:12px;padding-top:10px"${rows.length ? ' open' : ''}>
     <summary style="cursor:pointer;font-family:var(--f-mono);font-size:9px;letter-spacing:.07em;text-transform:uppercase;color:#B45309;font-weight:700">💬 Chat com a Administradora de Correspondentes${rows.length ? ` (${rows.length})` : ''}${resp}</summary>
     <div id="aud-corr-th-${eid}" style="background:#FFFBEB;border-radius:4px;padding:6px 8px 8px;margin-top:6px">${_corrChatThreadHtml(id)}</div>
-    <textarea id="aud-corr-ta-${eid}" rows="2" placeholder="Mensagem… (só a administradora marcada com @Administradora vê; sem marcação é interna)" style="width:100%;margin-top:6px;font-size:10px;padding:6px 8px;border:1px solid #e5e7eb;border-radius:5px;resize:vertical;font-family:inherit;color:#374151;background:#fff;box-sizing:border-box"></textarea>
+    <textarea id="aud-corr-ta-${eid}" rows="2" oninput="corrChatOnInput(this)" placeholder="Mensagem… (digite @ e escolha Fernanda Rodrigues para ela ver; sem marcação é interna)" style="width:100%;margin-top:6px;font-size:10px;padding:6px 8px;border:1px solid #e5e7eb;border-radius:5px;resize:vertical;font-family:inherit;color:#374151;background:#fff;box-sizing:border-box"></textarea>
     <div style="display:flex;gap:8px;justify-content:flex-end;flex-wrap:wrap;margin-top:6px">
-      <button type="button" onclick="corrChatInserirTag('${eid}')" style="background:#FEF3C7;border:1px solid #FDE68A;border-radius:4px;color:#92400e;font-size:10px;font-family:var(--f-mono);letter-spacing:.06em;padding:6px 10px;cursor:pointer;font-weight:700">@ Marcar administradora</button>
+      <button type="button" onclick="corrChatInserirTag('${eid}')" style="background:#FEF3C7;border:1px solid #FDE68A;border-radius:4px;color:#92400e;font-size:10px;font-family:var(--f-mono);letter-spacing:.06em;padding:6px 10px;cursor:pointer;font-weight:700">@ Marcar Fernanda</button>
       <button type="button" onclick="corrChatSend('${eid}')" style="background:#B45309;border:none;border-radius:4px;color:#fff;font-size:10px;font-family:var(--f-mono);letter-spacing:.06em;text-transform:uppercase;padding:7px 14px;cursor:pointer;font-weight:700">➤ Enviar</button>
     </div>
   </details>`;
@@ -15922,8 +15923,27 @@ function corrChatRender(id) {
 function corrChatInserirTag(id) {
   const ta = document.getElementById('aud-corr-ta-' + id);
   if (!ta) return;
-  if (!_corrChatMarca(ta.value)) ta.value = ('@Administradora ' + ta.value).trimEnd() + ' ';
+  if (!_corrChatMarca(ta.value)) ta.value = ('@' + _CORR_ADMIN_NOME + ' ' + ta.value).trimEnd() + ' ';
   ta.focus();
+}
+// Sugestão ao digitar @ no chat: Fernanda Rodrigues (e demais administradoras cadastradas)
+function corrChatOnInput(ta) {
+  const m = ta.value.slice(0, ta.selectionStart).match(/@([^\s@]{0,30})$/);
+  const dropId = ta.id + '-mention';
+  let drop = document.getElementById(dropId);
+  if (!m) { if (drop) drop.style.display = 'none'; return; }
+  const q = m[1].toLowerCase();
+  const nomes = [...new Set([_CORR_ADMIN_NOME, ...(window._audCorrespondentes || []).filter(c => c.tipo === 'admin').map(c => (c.nome || '').trim()).filter(Boolean)])]
+    .filter(n => n.toLowerCase().includes(q) || 'administradora'.includes(q));
+  if (!drop) {
+    drop = document.createElement('div');
+    drop.id = dropId;
+    drop.style.cssText = 'background:#fff;border:1px solid #d1d5db;border-radius:4px;margin-top:2px;box-shadow:0 2px 8px rgba(0,0,0,.08)';
+    ta.insertAdjacentElement('afterend', drop);
+  }
+  if (!nomes.length) { drop.style.display = 'none'; return; }
+  drop.innerHTML = nomes.map(n => `<div data-token="${_escHtml(n)}" onmousedown="event.preventDefault();_mencaoPick('${ta.id}',this.dataset.token)" style="padding:6px 10px;font-family:var(--f-mono);font-size:10px;cursor:pointer;color:#92400e;background:#FFFBEB">@${_escHtml(n)} <span style="color:#9CA3AF">· Administradora de Correspondentes</span></div>`).join('');
+  drop.style.display = '';
 }
 function _corrChatSb() {
   const { sbUrl, sbKey } = getSbCreds();
