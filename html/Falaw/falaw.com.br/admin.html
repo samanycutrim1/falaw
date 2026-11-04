@@ -15886,17 +15886,14 @@ function _corrChatFmt(iso) {
 }
 function _corrChatThreadHtml(id) {
   const rows = (window._corrChat && window._corrChat[id]) || [];
-  const aberto = _corrChatAberto(id);
-  const status = aberto
-    ? `<div style="font-family:var(--f-mono);font-size:8px;color:#1B7A4E;margin-bottom:2px">🔓 Visível para a administradora desde ${_corrChatFmt(aberto.created_at)}</div>`
-    : `<div style="font-family:var(--f-mono);font-size:8px;color:#9CA3AF;margin-bottom:2px">🔒 A administradora ainda não vê esta conversa — marque <b>@Administradora</b> para abrir o chat para ela.</div>`;
+  const status = `<div style="font-family:var(--f-mono);font-size:8px;color:#6B7280;margin-bottom:2px">🔒 A administradora só vê as mensagens em que for marcada com <b>@Administradora</b>. As demais são internas (Admin e Audiências).</div>`;
   const msgs = rows.map(r => {
     const ela = r.origem === 'corr_admin';
-    const visivel = ela || (aberto && r.created_at >= aberto.created_at);
+    const visivel = ela || r.marca_corr;
     let txt = _escHtml(r.texto);
     _corrChatTokens().forEach(t => { txt = txt.replace(new RegExp('@' + _mencaoEscapeRe(_escHtml(t)) + '(?![\\p{L}\\d])', 'giu'), m => `<span style="background:#FEF3C7;color:#92400e;border-radius:3px;padding:0 3px;font-weight:700">${m}</span>`); });
-    return `<div style="background:#fff;border-left:2px solid ${ela ? '#B45309' : '#0D2B5E'};border-radius:3px;padding:5px 8px;margin-top:4px;display:flex;gap:6px;align-items:flex-start;${visivel ? '' : 'opacity:.65'}">`
-      + `<div style="flex:1;min-width:0"><div style="font-family:var(--f-mono);font-size:8px;letter-spacing:.05em;text-transform:uppercase;color:#6B7280;margin-bottom:2px">${_corrChatFmt(r.created_at)} · ${_escHtml(r.autor || (ela ? 'Administradora' : 'Admin'))}${visivel ? '' : ' · interno (ela não vê)'}</div>`
+    return `<div style="background:#fff;border-left:2px solid ${ela ? '#B45309' : '#0D2B5E'};border-radius:3px;padding:5px 8px;margin-top:4px;display:flex;gap:6px;align-items:flex-start;${visivel ? '' : 'opacity:.8'}">`
+      + `<div style="flex:1;min-width:0"><div style="font-family:var(--f-mono);font-size:8px;letter-spacing:.05em;text-transform:uppercase;color:#6B7280;margin-bottom:2px">${_corrChatFmt(r.created_at)} · ${_escHtml(r.autor || (ela ? 'Administradora' : 'Admin'))}${visivel ? (ela ? '' : ' · 🔓 visível para ela') : ' · 🔒 interno (ela não vê)'}</div>`
       + `<div style="font-family:var(--f-mono);font-size:10px;letter-spacing:.04em;color:#0D2B5E;white-space:pre-wrap">${txt}</div></div>`
       + (ela ? '' : `<button onclick="corrChatDelete('${_escHtml(id)}',${r.id})" title="Excluir esta mensagem" style="background:none;border:none;color:#9CA3AF;font-size:11px;line-height:1;cursor:pointer;padding:2px 3px;flex-shrink:0">✕</button>`)
       + `</div>`;
@@ -15911,7 +15908,7 @@ function _corrChatBlockHtml(id) {
   return `<details style="border-top:1px solid #f3f4f6;margin-top:12px;padding-top:10px"${rows.length ? ' open' : ''}>
     <summary style="cursor:pointer;font-family:var(--f-mono);font-size:9px;letter-spacing:.07em;text-transform:uppercase;color:#B45309;font-weight:700">💬 Chat com a Administradora de Correspondentes${rows.length ? ` (${rows.length})` : ''}${resp}</summary>
     <div id="aud-corr-th-${eid}" style="background:#FFFBEB;border-radius:4px;padding:6px 8px 8px;margin-top:6px">${_corrChatThreadHtml(id)}</div>
-    <textarea id="aud-corr-ta-${eid}" rows="2" placeholder="Mensagem para a administradora… (escreva @Administradora para ela receber o chat)" style="width:100%;margin-top:6px;font-size:10px;padding:6px 8px;border:1px solid #e5e7eb;border-radius:5px;resize:vertical;font-family:inherit;color:#374151;background:#fff;box-sizing:border-box"></textarea>
+    <textarea id="aud-corr-ta-${eid}" rows="2" placeholder="Mensagem… (só a administradora marcada com @Administradora vê; sem marcação é interna)" style="width:100%;margin-top:6px;font-size:10px;padding:6px 8px;border:1px solid #e5e7eb;border-radius:5px;resize:vertical;font-family:inherit;color:#374151;background:#fff;box-sizing:border-box"></textarea>
     <div style="display:flex;gap:8px;justify-content:flex-end;flex-wrap:wrap;margin-top:6px">
       <button type="button" onclick="corrChatInserirTag('${eid}')" style="background:#FEF3C7;border:1px solid #FDE68A;border-radius:4px;color:#92400e;font-size:10px;font-family:var(--f-mono);letter-spacing:.06em;padding:6px 10px;cursor:pointer;font-weight:700">@ Marcar administradora</button>
       <button type="button" onclick="corrChatSend('${eid}')" style="background:#B45309;border:none;border-radius:4px;color:#fff;font-size:10px;font-family:var(--f-mono);letter-spacing:.06em;text-transform:uppercase;padding:7px 14px;cursor:pointer;font-weight:700">➤ Enviar</button>
@@ -15939,7 +15936,7 @@ async function corrChatSend(id) {
   if (!msg) return;
   const sb = _corrChatSb();
   if (!sb) { showToast('Supabase não configurado.'); return; }
-  const { data, error } = await sb.from('pauta_chat_corr').insert({ audiencia_id: id, origem: 'falaw', autor: 'Admin', texto: msg, marca_corr: _corrChatMarca(msg) }).select().single();
+  const { data, error } = await sb.from('pauta_chat_corr').insert({ audiencia_id: id, origem: 'falaw', autor: (sessionStorage.getItem('fa_admin_role') === 'restrito' ? 'Audiências' : 'Admin'), texto: msg, marca_corr: _corrChatMarca(msg) }).select().single();
   if (error) { showToast('Erro ao enviar (a tabela pauta_chat_corr existe? rode a migration 20261104): ' + error.message); return; }
   (window._corrChat = window._corrChat || {});
   (window._corrChat[id] = window._corrChat[id] || []).push(data);

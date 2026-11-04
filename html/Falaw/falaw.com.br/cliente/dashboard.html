@@ -3072,15 +3072,17 @@ async function loadPautaAdmin(silent) {
   if (sbUrl && sbKey && typeof supabase !== 'undefined') {
     try {
       const sb = supabase.createClient(sbUrl, sbKey);
-      // Chat com o escritório: só aparece para ela a partir da 1ª mensagem que a marcou (@)
+      // Chat com o escritório: só aparece para ela o que a marcou (@)
       window._corrChatVisible = {};
       let chatRes = { data: [] };
       try { chatRes = await sb.from('pauta_chat_corr').select('*').order('created_at', { ascending: true }); } catch (e) { /* tabela ainda não criada */ }
       const porAud = {};
       ((chatRes && !chatRes.error && chatRes.data) || []).forEach(r => { (porAud[r.audiencia_id] = porAud[r.audiencia_id] || []).push(r); });
+      // Ela só vê as mensagens em que foi marcada (+ as dela). Mensagens internas nunca chegam aqui.
       Object.keys(porAud).forEach(id => {
-        const abre = porAud[id].find(r => r.origem === 'falaw' && r.marca_corr);
-        if (abre) window._corrChatVisible[id] = porAud[id].filter(r => r.created_at >= abre.created_at);
+        if (porAud[id].some(r => r.origem === 'falaw' && r.marca_corr)) {
+          window._corrChatVisible[id] = porAud[id].filter(r => r.origem === 'corr_admin' || r.marca_corr);
+        }
       });
       const idsChat = Object.keys(window._corrChatVisible).map(i => '"' + String(i).replace(/"/g, '') + '"');
       const [{ data }, { data: corrData }] = await Promise.all([

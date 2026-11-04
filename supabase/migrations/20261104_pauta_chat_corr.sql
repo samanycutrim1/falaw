@@ -1,7 +1,7 @@
 -- Chat entre o escritório (admin.html) e a Administradora de Correspondentes,
 -- por audiência da pauta. A administradora (cliente/dashboard.html) só enxerga
--- a conversa de uma audiência a partir da primeira mensagem do escritório que
--- a marcou com @ (marca_corr = true); nada anterior a isso é exibido a ela.
+-- as mensagens do escritório em que foi marcada com @ (marca_corr = true) e as
+-- dela mesma; as demais são internas (Admin e Audiências, no admin.html).
 CREATE TABLE IF NOT EXISTS pauta_chat_corr (
   id BIGSERIAL PRIMARY KEY,
   audiencia_id TEXT NOT NULL,
