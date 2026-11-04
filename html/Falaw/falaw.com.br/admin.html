@@ -7887,6 +7887,17 @@ function sendEmailViaMailto() {
 ══════════════════════════════════════════ */
 const CLI_KEY = 'falaw_portal';
 
+// Grava clientes no localStorage sem estourar a cota (~5MB): relatórios que já têm
+// fileUrl (hospedados no Supabase/GitHub) não precisam guardar o arquivo em base64 aqui.
+function saveClientsSafe(clients) {
+  try { localStorage.setItem(CLI_KEY, JSON.stringify(clients)); return true; } catch (e) { /* cota */ }
+  (clients || []).forEach(c => (c.reports || []).forEach(r => { if (r.fileUrl && r.fileData) r.fileData = null; }));
+  try { localStorage.setItem(CLI_KEY, JSON.stringify(clients)); return true; } catch (e) { /* cota */ }
+  (clients || []).forEach(c => (c.reports || []).forEach(r => { if (r.fileData) r.fileData = null; }));
+  try { localStorage.setItem(CLI_KEY, JSON.stringify(clients)); return true; } catch (e) {
+    console.warn('saveClientsSafe: cota excedida mesmo sem arquivos', e); return false;
+  }
+}
 function getClients()           { try { return JSON.parse(localStorage.getItem(CLI_KEY)) || []; } catch { return []; } }
 function cliUID()           { return 'id_' + Date.now() + '_' + Math.random().toString(36).slice(2,7); }
 
@@ -11103,7 +11114,7 @@ async function cliDashSaveExcel() {
             period: repPeriodLabel,
             description: `Publicado automaticamente via upload de Excel (${filename}${_cliExcelData.filename2 ? ' + ' + _cliExcelData.filename2 : ''})`,
             fileName: _cliExcelData.file.name,
-            fileData: repFileData,
+            fileData: repFileUrl ? null : repFileData,  // só guarda base64 local se não houve upload
             fileUrl: repFileUrl,
             fileSize: _cliExcelData.file.size,
             uploadedAt: new Date().toISOString(),
@@ -11111,7 +11122,7 @@ async function cliDashSaveExcel() {
           };
           clients[cidxRep].reports = clients[cidxRep].reports || [];
           clients[cidxRep].reports.push(repEntry);
-          localStorage.setItem(CLI_KEY, JSON.stringify(clients));
+          saveClientsSafe(clients);
           // Salvar metadados no Supabase (ClientReport) para que o download funcione no dispositivo do cliente
           const repMetaOk = await apiSaveReportMeta({
             id: repEntry.id,
