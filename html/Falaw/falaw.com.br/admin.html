@@ -2966,6 +2966,14 @@ Ex: 0020123-64.2024.5.04.0382 - JOÃO SILVA (Deserção)"></textarea>
             <input type="text" id="cfg-gas-url" placeholder="https://script.google.com/macros/s/.../exec" autocomplete="off" />
             <p class="cfg-hint" style="margin-top:6px;">Cole aqui a URL do Apps Script implantado na conta <strong>ferrazandrade@falaw.com.br</strong>. Usado para enviar notificações e newsletters diretamente pelo Gmail da Falaw.</p>
           </div>
+          <div class="form-field">
+            <label>Senha do Escritório — <span style="font-weight:400;font-size:11px;font-family:var(--f-mono)">audiencias@falaw.com.br</span></label>
+            <input type="password" id="cfg-esc-pwd1" placeholder="Nova senha (mín. 8 caracteres)" autocomplete="new-password" maxlength="128" />
+            <input type="password" id="cfg-esc-pwd2" placeholder="Repita a nova senha" autocomplete="new-password" maxlength="128" style="margin-top:8px;" />
+            <div style="margin-top:8px;"><button type="button" class="btn btn-secondary" onclick="changeEscritorioPassword()">Alterar senha do escritório</button></div>
+            <p class="cfg-hint" style="margin-top:6px;">Senha de acesso ao painel do escritório em <code>falaw.com.br/cliente</code>. Requer o token do GitHub salvo acima. A senha não é guardada em texto: só o código criptografado dela é publicado, e a nova senha vale em poucos minutos, quando o site atualizar.</p>
+            <div id="cfg-esc-pwd-msg" style="margin-top:6px;font-size:12px;"></div>
+          </div>
           <div style="display:flex;gap:10px;flex-wrap:wrap;margin-top:4px;">
             <button type="button" class="btn btn-primary" onclick="saveConfig()">Salvar chaves</button>
             <button type="button" class="btn btn-secondary" onclick="testAPIs()">Testar conexões</button>
@@ -6055,6 +6063,34 @@ async function testAPIs() {
   box.innerHTML = lines.join('<br>');
 }
 
+async function changeEscritorioPassword() {
+  const msg = document.getElementById('cfg-esc-pwd-msg');
+  const say = (t, ok) => { msg.textContent = t; msg.style.color = ok ? '#2e7d32' : '#c62828'; };
+  const p1 = document.getElementById('cfg-esc-pwd1').value;
+  const p2 = document.getElementById('cfg-esc-pwd2').value;
+  if (p1.length < 8) return say('A senha precisa ter pelo menos 8 caracteres.');
+  if (p1 !== p2) return say('As duas senhas não são iguais.');
+  if (!ghToken()) return say('Salve antes o token do GitHub (campo acima) para publicar a nova senha.');
+  say('Publicando…', true);
+  // mesmo cálculo usado no login do escritório (cliente/index.html): SHA-256 simples
+  const buf = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(p1));
+  const hash = Array.from(new Uint8Array(buf)).map(b => b.toString(16).padStart(2, '0')).join('');
+  const path = 'html/Falaw/falaw.com.br/sb-config.js';
+  try {
+    const r = await fetch(`https://api.github.com/repos/${GITHUB_OWNER}/${GITHUB_REPO}/contents/${path}?ref=${GITHUB_BRANCH}&t=${Date.now()}`, { headers: ghHeaders() });
+    if (!r.ok) throw new Error('não foi possível ler o sb-config.js (' + r.status + ')');
+    const j = await r.json();
+    const cur = decodeURIComponent(escape(atob(j.content.replace(/\n/g, ''))));
+    const base = cur.split('\n').filter(l => !l.includes('SB_ESCRITORIO_PWD')).join('\n').replace(/\n*$/, '\n');
+    const sha = await _ghPush(path, base + `window.SB_ESCRITORIO_PWD_HASH='${hash}';\n`, j.sha, 'Admin: atualiza senha do escritório');
+    if (!sha) throw new Error('falha ao publicar no GitHub (verifique o token)');
+    localStorage.setItem('fa_escritorio_pwd_hash', hash);
+    document.getElementById('cfg-esc-pwd1').value = '';
+    document.getElementById('cfg-esc-pwd2').value = '';
+    say('✓ Senha alterada. Vale em poucos minutos, quando o site atualizar.', true);
+  } catch (e) { say('Erro: ' + e.message); }
+}
+
 function saveConfig() {
   save(KEYS.config, {
     tel:       document.getElementById('cfg-tel').value.trim(),
@@ -6088,7 +6124,9 @@ function saveConfig() {
   if (sbUrlVal && sbKeyVal && token) {
     const escCfg = (v) => String(v || '').replace(/\\/g, '\\\\').replace(/'/g, "\\'");
     const gasUrl2 = localStorage.getItem('fa_gas_url') || '';
-    const sbCfg = `/* sb-config.js — gerado pelo admin Falaw. */\nwindow.SB_URL='${escCfg(sbUrlVal)}';\nwindow.SB_KEY='${escCfg(sbKeyVal)}';\nwindow.SB_GAS_URL='${escCfg(gasUrl2)}';\nwindow.SB_ADMIN_EMAIL='${escCfg(authEmail)}';\n`;
+    const escHashRaw = localStorage.getItem('fa_escritorio_pwd_hash') || window.SB_ESCRITORIO_PWD_HASH || '';
+    const escHash = /^[0-9a-f]{64}$/.test(escHashRaw) ? escHashRaw : '';
+    const sbCfg = `/* sb-config.js — gerado pelo admin Falaw. */\nwindow.SB_URL='${escCfg(sbUrlVal)}';\nwindow.SB_KEY='${escCfg(sbKeyVal)}';\nwindow.SB_GAS_URL='${escCfg(gasUrl2)}';\nwindow.SB_ADMIN_EMAIL='${escCfg(authEmail)}';\n${escHash ? `window.SB_ESCRITORIO_PWD_HASH='${escHash}';\n` : ''}`;
     _ghPush('html/Falaw/falaw.com.br/sb-config.js', sbCfg, null, 'Admin: update Supabase config')
       .then(sha => { if (sha) showToast('✓ Configurações salvas e sb-config.js publicado.'); else showToast('Configurações salvas.'); });
   } else {
