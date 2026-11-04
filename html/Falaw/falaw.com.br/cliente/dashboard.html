@@ -3079,17 +3079,14 @@ async function loadPautaAdmin(silent) {
       const porAud = {};
       ((chatRes && !chatRes.error && chatRes.data) || []).forEach(r => { (porAud[r.audiencia_id] = porAud[r.audiencia_id] || []).push(r); });
       // Ela só vê as mensagens em que foi marcada (+ as dela). Mensagens internas nunca chegam aqui.
-      const idsMarcadas = [];
       Object.keys(porAud).forEach(id => {
         const vis = porAud[id].filter(r => r.origem === 'corr_admin' || r.marca_corr);
         if (vis.length) window._corrChatVisible[id] = vis;
-        if (porAud[id].some(r => r.origem === 'falaw' && r.marca_corr)) idsMarcadas.push(id);
       });
-      const idsChat = idsMarcadas.map(i => '"' + String(i).replace(/"/g, '') + '"');
       const [{ data }, { data: corrData }] = await Promise.all([
         sb.from('pauta_audiencias')
           .select('id,data_audiencia,horario,tipo_audiencia,modalidade,processo,vara,reclamante,reclamada,cliente,status,advogado,dados_preposto,corr_tipo_envio,comentarios,valor_advogado,valor_preposto')
-          .or(idsChat.length ? `corr_tipo_envio.not.is.null,id.in.(${idsChat.join(',')})` : 'corr_tipo_envio.not.is.null')
+          .not('corr_tipo_envio', 'is', null)
           .neq('status', 'cancelada')
           .order('data_audiencia', { ascending: true })
           .order('horario', { ascending: true }),
