@@ -3072,10 +3072,23 @@ async function loadPautaAdmin(silent) {
   if (sbUrl && sbKey && typeof supabase !== 'undefined') {
     try {
       const sb = supabase.createClient(sbUrl, sbKey);
+      // Chat com o escritório: só aparece para ela o que a marcou (@)
+      window._corrChatVisible = {};
+      let chatRes = { data: [] };
+      try { chatRes = await sb.from('pauta_chat_corr').select('*').order('created_at', { ascending: true }); } catch (e) { /* tabela ainda não criada */ }
+      const porAud = {};
+      ((chatRes && !chatRes.error && chatRes.data) || []).forEach(r => { (porAud[r.audiencia_id] = porAud[r.audiencia_id] || []).push(r); });
+      // Ela só vê as mensagens em que foi marcada (+ as dela). Mensagens internas nunca chegam aqui.
+      Object.keys(porAud).forEach(id => {
+        if (porAud[id].some(r => r.origem === 'falaw' && r.marca_corr)) {
+          window._corrChatVisible[id] = porAud[id].filter(r => r.origem === 'corr_admin' || r.marca_corr);
+        }
+      });
+      const idsChat = Object.keys(window._corrChatVisible).map(i => '"' + String(i).replace(/"/g, '') + '"');
       const [{ data }, { data: corrData }] = await Promise.all([
         sb.from('pauta_audiencias')
           .select('id,data_audiencia,horario,tipo_audiencia,modalidade,processo,vara,reclamante,reclamada,cliente,status,advogado,dados_preposto,corr_tipo_envio,comentarios,valor_advogado,valor_preposto')
-          .not('corr_tipo_envio', 'is', null)
+          .or(idsChat.length ? `corr_tipo_envio.not.is.null,id.in.(${idsChat.join(',')})` : 'corr_tipo_envio.not.is.null')
           .neq('status', 'cancelada')
           .order('data_audiencia', { ascending: true })
           .order('horario', { ascending: true }),
@@ -3171,6 +3184,46 @@ function _admCorrLimparFiltros() {
   _admCorrApplyFilters();
 }
 
+/* ── Chat com o escritório (só aparece nas audiências em que a Falaw marcou a administradora com @) ── */
+function _corrChatFmtAdm(iso) {
+  const d = new Date(iso), p = n => String(n).padStart(2, '0');
+  return `${p(d.getDate())}/${p(d.getMonth()+1)}/${String(d.getFullYear()).slice(2)} ${p(d.getHours())}:${p(d.getMinutes())}`;
+}
+function _corrChatThreadAdm(id) {
+  return ((window._corrChatVisible || {})[id] || []).map(r => {
+    const eu = r.origem === 'corr_admin';
+    return `<div style="background:#fff;border-left:2px solid ${eu ? '#B45309' : '#0D2B5E'};border-radius:3px;padding:5px 8px;margin-top:4px">`
+      + `<div style="font-family:monospace;font-size:8px;letter-spacing:.05em;text-transform:uppercase;color:#6B7280;margin-bottom:2px">${_corrChatFmtAdm(r.created_at)} · ${escHtml(eu ? (r.autor || 'Você') : 'Falaw')}</div>`
+      + `<div style="font-family:monospace;font-size:11px;color:#0D2B5E;white-space:pre-wrap">${escHtml(r.texto)}</div></div>`;
+  }).join('');
+}
+function _corrChatBlockAdm(id) {
+  if (!(window._corrChatVisible || {})[id]) return '';
+  const eid = escHtml(id);
+  return `<div style="flex-basis:100%;border-top:1px solid #f3f4f6;padding-top:10px">
+    <div style="font-family:monospace;font-size:9px;letter-spacing:.07em;text-transform:uppercase;color:#B45309;font-weight:700;margin-bottom:4px">💬 Chat com o escritório</div>
+    <div id="admcorr-chat-th-${eid}" style="background:#FFFBEB;border-radius:4px;padding:4px 8px 8px">${_corrChatThreadAdm(id)}</div>
+    <textarea id="admcorr-chat-ta-${eid}" rows="2" placeholder="Escreva para o escritório…" style="width:100%;margin-top:6px;font-size:12px;padding:6px 8px;border:1px solid #e5e7eb;border-radius:5px;resize:vertical;font-family:inherit;box-sizing:border-box"></textarea>
+    <div style="text-align:right;margin-top:6px"><button type="button" onclick="corrChatSendAdm('${eid}')" style="background:#B45309;color:#fff;border:none;border-radius:4px;font-family:monospace;font-size:10px;letter-spacing:.06em;text-transform:uppercase;padding:7px 14px;cursor:pointer;font-weight:700">➤ Enviar</button></div>
+  </div>`;
+}
+async function corrChatSendAdm(id) {
+  const ta = document.getElementById('admcorr-chat-ta-' + id);
+  const msg = ta && ta.value.trim();
+  if (!msg || !(window._corrChatVisible || {})[id]) return;
+  const sbUrl = (window.SB_URL || '').trim(), sbKey = (window.SB_KEY || '').trim();
+  if (!sbUrl || !sbKey || typeof supabase === 'undefined') return;
+  try {
+    const sb = supabase.createClient(sbUrl, sbKey);
+    const { data, error } = await sb.from('pauta_chat_corr').insert({ audiencia_id: id, origem: 'corr_admin', autor: (window._fawSession && window._fawSession.name) || 'Administradora', texto: msg, marca_corr: false }).select().single();
+    if (error) throw error;
+    window._corrChatVisible[id].push(data);
+    ta.value = '';
+    const th = document.getElementById('admcorr-chat-th-' + id);
+    if (th) th.innerHTML = _corrChatThreadAdm(id);
+  } catch (e) { alert('Não foi possível enviar: ' + (e.message || e)); }
+}
+
 function renderCorrAdminRows(rows) {
   const el = document.getElementById('pauta-list');
   if (!el) return;
@@ -3187,7 +3240,7 @@ function renderCorrAdminRows(rows) {
   const MOD_LABEL   = { 'VIRTUAL':'Virtual','PRESENCIAL':'Presencial','HÍBRIDA':'Híbrida' };
 
   function tipoLabel(t) {
-    return t === 'ambos' ? 'Advogado + Preposto' : t === 'preposto' ? 'Só Preposto' : 'Só Advogado';
+    return !t ? 'Chat do escritório' : t === 'ambos' ? 'Advogado + Preposto' : t === 'preposto' ? 'Só Preposto' : 'Só Advogado';
   }
   function tipoColor(t) {
     return t === 'ambos' ? '#7C3AED' : t === 'preposto' ? '#0D2B5E' : '#1B7A4E';
@@ -3239,6 +3292,7 @@ function renderCorrAdminRows(rows) {
           style="background:#0D2B5E;color:#fff;border:none;padding:8px 16px;border-radius:4px;font-family:monospace;font-size:9px;letter-spacing:.08em;text-transform:uppercase;cursor:pointer;font-weight:700;white-space:nowrap;flex-shrink:0">
           ${assigned ? '✏️ Editar' : '+ Atribuir'}
         </button>
+        ${_corrChatBlockAdm(a.id)}
       </div>`;
     });
   });
@@ -4952,7 +5006,7 @@ async function init() {
       document.getElementById('btn-novo-corr-admin').style.display = '';
       showTab('pauta');
       loadPautaAdmin();
-      _liveInit(['pauta_audiencias','correspondentes','equipe','mencoes'], () => loadPautaAdmin(true));
+      _liveInit(['pauta_audiencias','correspondentes','equipe','mencoes','pauta_chat_corr'], () => loadPautaAdmin(true));
       return;
     }
     const tipoLabel = session.corrTipo === 'preposto' ? 'Preposto' : 'Advogado Correspondente';
