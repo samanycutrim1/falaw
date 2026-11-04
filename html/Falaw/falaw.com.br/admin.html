@@ -16183,7 +16183,7 @@ function _audCard(a) {
         ${(a.advogado || a.dados_preposto || a.valor_advogado != null || a.valor_preposto != null) ? `<button class="btn btn-ghost btn-sm" style="color:#B45309;border-color:#FDE68A;background:#FFFBEB;font-size:9px;justify-content:center" onclick="_audLimparCorr('${_escHtml(a.id)}')" title="Limpar advogado, preposto e valores atribuídos pelo admin de correspondentes">🗑 Limpar Corr.</button>` : ''}
       </div>
     </div>
-    ${_corrChatBlockHtml(a.id)}
+    ${a.corr_tipo_envio ? _corrChatBlockHtml(a.id) : ''}
     <!-- controle de orientação -->
     <div style="border-top:1px solid #f3f4f6;margin-top:12px;padding-top:12px">
       <textarea id="aud-obs-${_escHtml(a.id)}" placeholder="Nova mensagem… (as anteriores ficam no histórico acima; digite @ para mencionar)" rows="2" oninput="_mencaoOnInput(this)" onkeydown="_mencaoOnKeydown(event,this)"
