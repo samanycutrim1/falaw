@@ -3079,12 +3079,13 @@ async function loadPautaAdmin(silent) {
       const porAud = {};
       ((chatRes && !chatRes.error && chatRes.data) || []).forEach(r => { (porAud[r.audiencia_id] = porAud[r.audiencia_id] || []).push(r); });
       // Ela só vê as mensagens em que foi marcada (+ as dela). Mensagens internas nunca chegam aqui.
+      const idsMarcadas = [];
       Object.keys(porAud).forEach(id => {
-        if (porAud[id].some(r => r.origem === 'falaw' && r.marca_corr)) {
-          window._corrChatVisible[id] = porAud[id].filter(r => r.origem === 'corr_admin' || r.marca_corr);
-        }
+        const vis = porAud[id].filter(r => r.origem === 'corr_admin' || r.marca_corr);
+        if (vis.length) window._corrChatVisible[id] = vis;
+        if (porAud[id].some(r => r.origem === 'falaw' && r.marca_corr)) idsMarcadas.push(id);
       });
-      const idsChat = Object.keys(window._corrChatVisible).map(i => '"' + String(i).replace(/"/g, '') + '"');
+      const idsChat = idsMarcadas.map(i => '"' + String(i).replace(/"/g, '') + '"');
       const [{ data }, { data: corrData }] = await Promise.all([
         sb.from('pauta_audiencias')
           .select('id,data_audiencia,horario,tipo_audiencia,modalidade,processo,vara,reclamante,reclamada,cliente,status,advogado,dados_preposto,corr_tipo_envio,comentarios,valor_advogado,valor_preposto')
@@ -3198,7 +3199,6 @@ function _corrChatThreadAdm(id) {
   }).join('');
 }
 function _corrChatBlockAdm(id) {
-  if (!(window._corrChatVisible || {})[id]) return '';
   const eid = escHtml(id);
   return `<div style="flex-basis:100%;border-top:1px solid #f3f4f6;padding-top:10px">
     <div style="font-family:monospace;font-size:9px;letter-spacing:.07em;text-transform:uppercase;color:#B45309;font-weight:700;margin-bottom:4px">💬 Chat com o escritório</div>
@@ -3210,14 +3210,15 @@ function _corrChatBlockAdm(id) {
 async function corrChatSendAdm(id) {
   const ta = document.getElementById('admcorr-chat-ta-' + id);
   const msg = ta && ta.value.trim();
-  if (!msg || !(window._corrChatVisible || {})[id]) return;
+  if (!msg) return;
   const sbUrl = (window.SB_URL || '').trim(), sbKey = (window.SB_KEY || '').trim();
   if (!sbUrl || !sbKey || typeof supabase === 'undefined') return;
   try {
     const sb = supabase.createClient(sbUrl, sbKey);
     const { data, error } = await sb.from('pauta_chat_corr').insert({ audiencia_id: id, origem: 'corr_admin', autor: (window._fawSession && window._fawSession.name) || 'Administradora', texto: msg, marca_corr: false }).select().single();
     if (error) throw error;
-    window._corrChatVisible[id].push(data);
+    (window._corrChatVisible = window._corrChatVisible || {});
+    (window._corrChatVisible[id] = window._corrChatVisible[id] || []).push(data);
     ta.value = '';
     const th = document.getElementById('admcorr-chat-th-' + id);
     if (th) th.innerHTML = _corrChatThreadAdm(id);
