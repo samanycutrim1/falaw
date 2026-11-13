@@ -2658,6 +2658,26 @@ function _mencaoTogglePainel() {
 
 // Painel em duas colunas: lista da equipe (com contagem de pendentes de cada um)
 // à esquerda; ao clicar num nome, as menções pendentes só daquela pessoa aparecem à direita.
+/* ── Foto interna da equipe (só no dashboard do escritório; vem da tabela equipe) ── */
+function _equipeAvatar(c, size) {
+  size = size || 24;
+  const base = 'width:' + size + 'px;height:' + size + 'px;border-radius:50%;flex-shrink:0;display:inline-flex;align-items:center;justify-content:center;overflow:hidden;background:#0D2B5E;color:#fff;font-weight:700;font-family:monospace;font-size:' + Math.max(8, Math.round(size * 0.38)) + 'px;';
+  const nome = (c && (c.nome || c.sigla)) || '';
+  if (c && c.foto) return '<span title="' + escHtml(nome) + '" style="' + base + '"><img src="' + String(c.foto).replace(/"/g, '%22') + '" alt="' + escHtml(nome) + '" loading="lazy" style="width:100%;height:100%;object-fit:cover" /></span>';
+  return '<span title="' + escHtml(nome) + '" style="' + base + '">' + escHtml(_mencaoIniciais(nome)) + '</span>';
+}
+// Localiza o membro da equipe pelo texto do campo "Advogado" (sigla, nome ou "sigla / nome").
+function _equipeDoTexto(txt) {
+  const t = String(txt || '').trim().toLowerCase();
+  if (!t) return null;
+  return (window._escEquipe || []).find(c => {
+    const nome = (c.nome || '').trim().toLowerCase();
+    const sig  = (c.sigla || '').trim().toLowerCase();
+    if (nome && t.includes(nome)) return true;
+    return sig && new RegExp('(^|[^a-z0-9])' + sig.replace(/[.*+?^${}()|[\]\\]/g, '\\$&') + '([^a-z0-9]|$)').test(t);
+  }) || null;
+}
+
 function _mencaoIniciais(nome) {
   return (nome || '').trim().split(/\s+/).map(p => p[0]).slice(0, 2).join('').toUpperCase();
 }
@@ -2683,7 +2703,7 @@ function _mencaoRenderRoster() {
     const naoAbertas = (window._mencaoPendentes || []).some(m => (m.mencionado || '').toLowerCase() === token.toLowerCase() && !_mencaoFoiAberta(m));
     const ativo = window._mencaoAtivo === token;
     return `<div onclick="_mencaoSelecionarPessoa('${token.replace(/'/g,"\\'")}')" style="display:flex;align-items:center;gap:8px;padding:8px 10px;cursor:pointer;border-bottom:1px solid #f3f4f6;background:${ativo ? '#EEF2FF' : '#fff'}" onmouseenter="this.style.background='#F9FAFB'" onmouseleave="this.style.background='${ativo ? '#EEF2FF' : '#fff'}'">
-      <div style="width:24px;height:24px;border-radius:50%;background:#0D2B5E;color:#fff;flex-shrink:0;display:flex;align-items:center;justify-content:center;font-size:9px;font-weight:700;font-family:monospace">${escHtml(_mencaoIniciais(c.nome))}</div>
+      ${_equipeAvatar(c, 28)}
       <div style="flex:1;min-width:0">
         <div style="font-size:11px;font-weight:600;color:#111;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${escHtml(c.nome || token)}</div>
         <div style="font-size:9px;font-family:monospace;color:#9CA3AF">@${escHtml(token)}</div>
@@ -3833,14 +3853,19 @@ async function loadPautaEscritorio(silent) {
   if (sbUrl && sbKey && typeof supabase !== 'undefined') {
     try {
       const sb = supabase.createClient(sbUrl, sbKey);
-      const [{ data }, { data: cData }, { data: eData }, { data: mData }] = await Promise.all([
+      const [{ data }, { data: cData }, { data: eData0, error: eErr }, { data: mData }] = await Promise.all([
         sb.from('pauta_audiencias').select('*').order('data_audiencia', { ascending: true }).order('horario', { ascending: true }).range(0, 9999),
         sb.from('correspondentes').select('id,nome,email,celular,tipo,cpf,oab,observacoes'),
-        sb.from('equipe').select('id,nome,sigla').order('nome', { ascending: true }),
+        sb.from('equipe').select('id,nome,sigla,foto').order('nome', { ascending: true }),
         sb.from('mencoes').select('*').is('lida_at', null).order('created_at', { ascending: false }).limit(200),
       ]);
       if (data) rows = data;
       window._escCorrespondentes = cData || [];
+      let eData = eData0;
+      if (eErr) {
+        // Coluna "foto" ainda não migrada: recarrega sem ela para não quebrar as menções.
+        eData = (await sb.from('equipe').select('id,nome,sigla').order('nome', { ascending: true })).data;
+      }
       window._escEquipe = eData || [];
       window._mencaoPendentes = mData || [];
       const badge = document.getElementById('mencao-badge');
@@ -4539,6 +4564,11 @@ function _escRenderRows(rows, today) {
       const isSustOral   = a.tipo_audiencia === 'SUSTENTAÇÃO ORAL';
       const isPericia    = a.tipo_audiencia === 'PERÍCIA';
       const temMencaoPendente = (window._mencaoPendentes || []).some(m => m.audiencia_id === a.id);
+      const _membroAdv = a.advogado ? _equipeDoTexto(a.advogado) : null;
+      const _equipeAvatarAdv = _membroAdv ? _equipeAvatar(_membroAdv, 36) : '';
+      const _marcadosAvatares = [...new Set((window._mencaoPendentes || []).filter(m => m.audiencia_id === a.id).map(m => (m.mencionado || '').toLowerCase()))]
+        .map(tk => (window._escEquipe || []).find(c => _mencaoToken(c).toLowerCase() === tk)).filter(c => c && c.foto)
+        .map(c => _equipeAvatar(c, 20)).join('');
       const op = isCancelada ? 'opacity:.5;' : isPastDate ? 'opacity:.72;' : '';
 
       const st   = state[a.id] || {};
@@ -4569,7 +4599,7 @@ function _escRenderRows(rows, today) {
           <div style="flex:1;min-width:200px">
             <!-- tags -->
             <div style="display:flex;gap:6px;flex-wrap:wrap;margin-bottom:8px;align-items:center">
-              ${temMencaoPendente ? `<span title="Tem menção pendente nas observações" style="background:#FEE2E2;color:#B91C1C;font-family:${MONO};font-size:9px;font-weight:700;letter-spacing:.06em;text-transform:uppercase;padding:3px 8px;border-radius:3px;border:1px solid #FCA5A5">⚠️ Atenção</span>` : ''}
+              ${temMencaoPendente ? `<span title="Tem menção pendente nas observações" style="background:#FEE2E2;color:#B91C1C;font-family:${MONO};font-size:9px;font-weight:700;letter-spacing:.06em;text-transform:uppercase;padding:3px 8px;border-radius:3px;border:1px solid #FCA5A5">⚠️ Atenção</span>${_marcadosAvatares}` : ''}
               <span style="background:${tipoBg};color:${tipoColor};font-family:${MONO};font-size:9px;font-weight:700;letter-spacing:.08em;text-transform:uppercase;padding:3px 8px;border-radius:3px">${escHtml(tipoLabel)}</span>
               <span style="background:${_mod==='VIRTUAL'?'#dbeafe':'#dcfce7'};color:${_mod==='VIRTUAL'?'#1e40af':'#166534'};font-family:${MONO};font-size:9px;letter-spacing:.06em;text-transform:uppercase;padding:3px 8px;border-radius:3px">${escHtml(modLabel)}</span>
               <span style="background:${stBg};color:${stColor};font-family:${MONO};font-size:9px;font-weight:700;letter-spacing:.06em;text-transform:uppercase;padding:3px 8px;border-radius:3px">${escHtml(stLabel)}</span>
@@ -4587,7 +4617,7 @@ function _escRenderRows(rows, today) {
             </div>
             <!-- advogado, preposto e testemunha -->
             ${a.advogado||a.dados_preposto||a.testemunhas ? `<div style="margin-top:4px;font-size:11px;color:${DARK};background:#f9fafb;border-radius:4px;padding:7px 10px;line-height:1.7">
-              ${a.advogado ? `<div><span style="font-family:${MONO};font-size:8px;text-transform:uppercase;letter-spacing:.07em;color:${MUTED}">Advogado</span><br/><strong>${escHtml(a.advogado)}</strong>${advCorr&&(advCorr.email||advCorr.celular||advCorr.oab)?`<div style="font-family:${MONO};font-size:9px;color:#6B7280;margin-top:2px">${escHtml(advCorr.email||'')}${advCorr.celular?' · '+escHtml(advCorr.celular):''}${advCorr.oab?' · OAB '+escHtml(advCorr.oab):''}</div>`:''}</div>` : ''}
+              ${a.advogado ? `<div style="display:flex;align-items:center;gap:8px">${_equipeAvatarAdv}<div><span style="font-family:${MONO};font-size:8px;text-transform:uppercase;letter-spacing:.07em;color:${MUTED}">Advogado</span><br/><strong>${escHtml(a.advogado)}</strong>${advCorr&&(advCorr.email||advCorr.celular||advCorr.oab)?`<div style="font-family:${MONO};font-size:9px;color:#6B7280;margin-top:2px">${escHtml(advCorr.email||'')}${advCorr.celular?' · '+escHtml(advCorr.celular):''}${advCorr.oab?' · OAB '+escHtml(advCorr.oab):''}</div>`:''}</div></div>` : ''}
               ${a.dados_preposto ? `<div style="margin-top:${a.advogado?'6px':'0'}"><span style="font-family:${MONO};font-size:8px;text-transform:uppercase;letter-spacing:.07em;color:${MUTED}">Preposto</span><br/><strong>${escHtml(a.dados_preposto)}</strong>${prepCorr&&(prepCorr.email||prepCorr.cpf)?`<div style="font-family:${MONO};font-size:9px;color:#6B7280;margin-top:2px">${escHtml(prepCorr.email||'')}${prepCorr.celular?' · '+escHtml(prepCorr.celular):''}${prepCorr.cpf?' · CPF '+escHtml(prepCorr.cpf):''}</div>`:''}</div>` : ''}
               ${a.testemunhas ? `<div style="margin-top:${(a.advogado||a.dados_preposto)?'6px':'0'}"><span style="font-family:${MONO};font-size:8px;text-transform:uppercase;letter-spacing:.07em;color:#92400e">Testemunha</span><br/><strong>${escHtml(a.testemunhas).replace(/\n/g,'<br>')}</strong></div>` : ''}
             </div>` : ''}
