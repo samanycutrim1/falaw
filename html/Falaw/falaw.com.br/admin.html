@@ -3185,6 +3185,16 @@ Ex: 0020123-64.2024.5.04.0382 - JOÃO SILVA (Deserção)"></textarea>
         <input type="text" id="member-role" placeholder="Advogado(a)" />
       </div>
       <div class="form-field">
+        <label>Foto interna <span style="font-weight:400;font-size:11px;color:var(--c-muted)">(opcional)</span></label>
+        <div style="display:flex;align-items:center;gap:12px;margin-top:4px">
+          <div id="member-foto-preview" style="width:64px;height:64px;border-radius:50%;background:#0D2B5E;color:#fff;display:flex;align-items:center;justify-content:center;font-size:18px;font-weight:700;overflow:hidden;flex-shrink:0">?</div>
+          <label for="member-foto-file" class="btn btn-ghost btn-sm" style="cursor:pointer;margin:0">Escolher foto</label>
+          <input type="file" id="member-foto-file" accept="image/*" class="file-input-hidden" onchange="memberFotoSelecionada(this)" />
+          <button type="button" id="member-foto-remove" class="btn btn-ghost btn-sm" onclick="memberFotoRemover()" style="display:none">Remover</button>
+        </div>
+        <p class="cfg-hint" style="margin-top:4px;font-size:11px;color:var(--c-muted)">Aparece só aqui no sistema (Pauta de Audiências e menções), para identificar quem está designado ou foi marcado. <strong>Nunca é publicada no site.</strong></p>
+      </div>
+      <div class="form-field">
         <label>Biografia</label>
         <textarea id="member-bio" rows="6" placeholder="Formação, especializações e áreas de atuação"></textarea>
       </div>
@@ -5326,7 +5336,7 @@ function generateTeamJS(members) {
   // Campos privados (celular e API key CallMeBot) ficam só no Supabase —
   // nunca no team-data.js, que é público no site. Membros marcados "oculto"
   // também ficam de fora — continuam no admin e nas @menções, só não publicam.
-  const publicos = members.filter(m => !m.oculto).map(({ celular, callmebotApikey, oculto, ...m }) => m);
+  const publicos = members.filter(m => !m.oculto).map(({ celular, callmebotApikey, oculto, foto, ...m }) => m);
   return '/* team-data.js — gerado pelo admin Ferraz Andrade. Não editar manualmente. */\nvar FALAW_TEAM = ' + JSON.stringify(publicos, null, 2) + ';\n';
 }
 
@@ -5785,6 +5795,8 @@ function openMemberModal(id) {
       document.getElementById('member-bio').value     = m.bio;
       document.getElementById('member-status').value  = m.status;
       document.getElementById('member-oculto').checked = !!m.oculto;
+      _memberFotoReset(false);
+      _memberFotoCarregar(m.id, m.name);
       // Celular e API key não vão para o team-data.js público — completa
       // a partir do Supabase (tabela equipe), que é a fonte de verdade.
       (async () => {
@@ -5813,6 +5825,8 @@ function openMemberModal(id) {
     document.getElementById('member-bio').value     = '';
     document.getElementById('member-status').value  = 'active';
     document.getElementById('member-oculto').checked = false;
+    _memberFotoReset(true);
+    _memberFotoPintar('', '');
   }
   document.getElementById('member-modal').classList.add('open');
 }
@@ -5822,6 +5836,66 @@ function closeMemberModal() {
 }
 
 function editMember(id) { openMemberModal(id); }
+
+/* ── Foto interna do membro (só Supabase; nunca vai para o team-data.js) ── */
+let _memberFoto = { valor: '', dirty: false, loaded: true };
+
+function _memberFotoReset(loaded) { _memberFoto = { valor: '', dirty: false, loaded }; }
+
+function _memberFotoPintar(src, nome) {
+  const el = document.getElementById('member-foto-preview');
+  const rm = document.getElementById('member-foto-remove');
+  if (!el) return;
+  if (src) { el.innerHTML = '<img src="' + src.replace(/"/g, '%22') + '" alt="" style="width:100%;height:100%;object-fit:cover" />'; }
+  else { el.textContent = _mencaoIniciais(nome) || '?'; }
+  if (rm) rm.style.display = src ? '' : 'none';
+}
+
+async function _memberFotoCarregar(id, nome) {
+  _memberFotoPintar('', nome);
+  try {
+    const { sbUrl, sbKey } = getSbCreds();
+    if (!sbUrl || !sbKey) return;
+    const sb = supabase.createClient(sbUrl, sbKey, { global: { headers: { 'X-Client-App': 'admin' } } });
+    const { data, error } = await sb.from('equipe').select('foto').eq('id', id).limit(1);
+    if (error) { console.warn('equipe foto load:', error.message); return; }
+    if (editingMemberId !== id) return; // modal já mudou de membro
+    _memberFoto.loaded = true;
+    if (!_memberFoto.dirty) {
+      _memberFoto.valor = (data && data[0] && data[0].foto) || '';
+      _memberFotoPintar(_memberFoto.valor, nome);
+    }
+  } catch (e) { console.warn('equipe foto load:', e.message); }
+}
+
+function memberFotoSelecionada(input) {
+  const file = input.files && input.files[0];
+  input.value = '';
+  if (!file) return;
+  if (!/^image\//.test(file.type)) { alert('Selecione um arquivo de imagem.'); return; }
+  const reader = new FileReader();
+  reader.onload = () => {
+    const img = new Image();
+    img.onload = () => {
+      // Recorte quadrado centralizado, reduzido a 256px (JPEG) — fica leve no banco.
+      const lado = Math.min(img.width, img.height), T = 256;
+      const c = document.createElement('canvas'); c.width = T; c.height = T;
+      c.getContext('2d').drawImage(img, (img.width - lado) / 2, (img.height - lado) / 2, lado, lado, 0, 0, T, T);
+      _memberFoto.valor = c.toDataURL('image/jpeg', 0.82);
+      _memberFoto.dirty = true;
+      _memberFotoPintar(_memberFoto.valor, document.getElementById('member-name').value);
+    };
+    img.onerror = () => alert('Não foi possível ler esta imagem.');
+    img.src = reader.result;
+  };
+  reader.readAsDataURL(file);
+}
+
+function memberFotoRemover() {
+  _memberFoto.valor = '';
+  _memberFoto.dirty = true;
+  _memberFotoPintar('', document.getElementById('member-name').value);
+}
 
 function saveMember() {
   const name    = document.getElementById('member-name').value.trim();
@@ -5857,8 +5931,18 @@ function saveMember() {
     try {
       const sb = supabase.createClient(sbUrl, sbKey, { global: { headers: { 'X-Client-App': 'admin' } } });
       const mid = id || members.find(m => m.name === name && m.email === email)?.id || '';
-      sb.from('equipe').upsert({ id: mid, nome: name, sigla: sigla || null, email, celular, cargo: role, callmebot_apikey: callmebotApikey || null }).then(({ error }) => {
-        if (error) console.warn('equipe upsert:', error.message);
+      const row = { id: mid, nome: name, sigla: sigla || null, email, celular, cargo: role, callmebot_apikey: callmebotApikey || null };
+      // Foto só é enviada quando foi alterada aqui — evita apagar a foto existente por engano.
+      if (_memberFoto.dirty && _memberFoto.loaded) row.foto = _memberFoto.valor || null;
+      sb.from('equipe').upsert(row).then(({ error }) => {
+        if (!error) return;
+        console.warn('equipe upsert:', error.message);
+        if (row.foto !== undefined && /foto/i.test(error.message)) {
+          // Coluna "foto" ainda não existe: salva o resto e avisa para rodar a migração.
+          delete row.foto;
+          sb.from('equipe').upsert(row);
+          showToast('⚠ Foto não salva: rode a migração 20261113_equipe_foto.sql no Supabase.');
+        }
       });
     } catch(e) { console.warn('equipe save:', e.message); }
   }
@@ -15674,6 +15758,28 @@ function _mencaoIniciais(nome) {
   return (nome || '').trim().split(/\s+/).map(p => p[0]).slice(0, 2).join('').toUpperCase();
 }
 
+/* ── Foto interna da equipe (só admin; vem da tabela equipe do Supabase) ── */
+function _equipeAvatar(c, size) {
+  size = size || 24;
+  const base = 'width:' + size + 'px;height:' + size + 'px;border-radius:50%;flex-shrink:0;display:inline-flex;align-items:center;justify-content:center;overflow:hidden;background:#0D2B5E;color:#fff;font-weight:700;font-family:var(--f-mono);font-size:' + Math.max(8, Math.round(size * 0.38)) + 'px;';
+  const nome = (c && (c.nome || c.sigla)) || '';
+  if (c && c.foto) return '<span title="' + _escHtml(nome) + '" style="' + base + '"><img src="' + String(c.foto).replace(/"/g, '%22') + '" alt="' + _escHtml(nome) + '" loading="lazy" style="width:100%;height:100%;object-fit:cover" /></span>';
+  return '<span title="' + _escHtml(nome) + '" style="' + base + '">' + _escHtml(_mencaoIniciais(nome)) + '</span>';
+}
+
+// Localiza o membro da equipe a partir do texto do campo "Advogado" da audiência
+// (aceita sigla, nome completo ou "sigla / nome").
+function _equipeDoTexto(txt) {
+  const t = String(txt || '').trim().toLowerCase();
+  if (!t) return null;
+  return (window._audEquipe || []).find(c => {
+    const nome = (c.nome || '').trim().toLowerCase();
+    const sig  = (c.sigla || '').trim().toLowerCase();
+    if (nome && t.includes(nome)) return true;
+    return sig && new RegExp('(^|[^a-z0-9])' + sig.replace(/[.*+?^${}()|[\]\\]/g, '\\$&') + '([^a-z0-9]|$)').test(t);
+  }) || null;
+}
+
 function _mencaoContarPendentes(token) {
   return (window._mencaoPendentes || []).filter(m => (m.mencionado || '').toLowerCase() === (token || '').toLowerCase()).length;
 }
@@ -15695,7 +15801,7 @@ function _mencaoRenderRoster() {
     const naoAbertas = (window._mencaoPendentes || []).some(m => (m.mencionado || '').toLowerCase() === token.toLowerCase() && !_mencaoFoiAberta(m));
     const ativo = window._mencaoAtivo === token;
     return `<div onclick="_mencaoSelecionarPessoa('${token.replace(/'/g,"\\'")}')" style="display:flex;align-items:center;gap:8px;padding:8px 10px;cursor:pointer;border-bottom:1px solid #f3f4f6;background:${ativo ? '#EEF2FF' : '#fff'}" onmouseenter="this.style.background='#F9FAFB'" onmouseleave="this.style.background='${ativo ? '#EEF2FF' : '#fff'}'">
-      <div style="width:24px;height:24px;border-radius:50%;background:#0D2B5E;color:#fff;flex-shrink:0;display:flex;align-items:center;justify-content:center;font-size:9px;font-weight:700;font-family:var(--f-mono)">${_escHtml(_mencaoIniciais(c.nome))}</div>
+      ${_equipeAvatar(c, 28)}
       <div style="flex:1;min-width:0">
         <div style="font-size:11px;font-weight:600;color:var(--c-dark);white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${_escHtml(c.nome || token)}</div>
         <div style="font-size:9px;font-family:var(--f-mono);color:var(--c-muted)">@${_escHtml(token)}</div>
@@ -16105,6 +16211,12 @@ function _audCard(a) {
   const advCad  = a.advogado       ? _corrCad.find(c => c.tipo === 'advogado' && (a.advogado||'').toLowerCase().includes((c.nome||'').toLowerCase()))       : null;
   const prepCad = a.dados_preposto ? _corrCad.find(c => c.tipo === 'preposto' && (a.dados_preposto||'').toLowerCase().includes((c.nome||'').toLowerCase())) : null;
   const temMencaoPendente = (window._mencaoPendentes || []).some(m => m.audiencia_id === a.id);
+  const _membroAdv = a.advogado ? _equipeDoTexto(a.advogado) : null;
+  const _equipeAvatarAdv = _membroAdv ? _equipeAvatar(_membroAdv, 36) : '';
+  // Quem foi marcado (@) e ainda não deu baixa nesta audiência
+  const _marcadosAvatares = [...new Set((window._mencaoPendentes || []).filter(m => m.audiencia_id === a.id).map(m => (m.mencionado || '').toLowerCase()))]
+    .map(tk => (window._audEquipe || []).find(c => _mencaoToken(c).toLowerCase() === tk)).filter(c => c && c.foto)
+    .map(c => _equipeAvatar(c, 20)).join('');
 
   const isCancelPje = a.status === 'cancelado_pje';
   const isCancelada  = a.status === 'cancelada';
@@ -16133,7 +16245,7 @@ function _audCard(a) {
       <div style="flex:1;min-width:200px">
         <!-- tags -->
         <div style="display:flex;gap:6px;flex-wrap:wrap;margin-bottom:8px;align-items:center">
-          ${temMencaoPendente ? `<span title="Tem menção pendente nas observações" style="background:#FEE2E2;color:#B91C1C;font-family:var(--f-mono);font-size:9px;font-weight:700;letter-spacing:.06em;text-transform:uppercase;padding:3px 8px;border-radius:3px;border:1px solid #FCA5A5">⚠️ Atenção</span>` : ''}
+          ${temMencaoPendente ? `<span title="Tem menção pendente nas observações" style="background:#FEE2E2;color:#B91C1C;font-family:var(--f-mono);font-size:9px;font-weight:700;letter-spacing:.06em;text-transform:uppercase;padding:3px 8px;border-radius:3px;border:1px solid #FCA5A5">⚠️ Atenção</span>${_marcadosAvatares}` : ''}
           <span style="background:${tipoBg};color:${tipoColor};font-family:var(--f-mono);font-size:9px;font-weight:700;letter-spacing:.08em;text-transform:uppercase;padding:3px 8px;border-radius:3px">${tipoLabel}</span>
           <span style="background:${_mod==='VIRTUAL'?'#dbeafe':'#dcfce7'};color:${_mod==='VIRTUAL'?'#1e40af':'#166534'};font-family:var(--f-mono);font-size:9px;letter-spacing:.06em;text-transform:uppercase;padding:3px 8px;border-radius:3px">${modIcon} ${modLabel}</span>
           <span style="background:${stBg};color:${stColor};font-family:var(--f-mono);font-size:9px;font-weight:700;letter-spacing:.06em;text-transform:uppercase;padding:3px 8px;border-radius:3px">${stLabel}</span>
@@ -16152,7 +16264,7 @@ function _audCard(a) {
         <!-- responsáveis -->
         <!-- advogado, preposto e testemunha -->
         ${a.advogado||a.dados_preposto||a.testemunhas ? `<div style="margin-top:4px;font-size:11px;color:var(--c-dark);background:#f9fafb;border-radius:4px;padding:7px 10px;line-height:1.7">
-          ${a.advogado ? `<div><span style="font-family:var(--f-mono);font-size:8px;text-transform:uppercase;letter-spacing:.07em;color:var(--c-muted)">Advogado</span><br/><strong>${_escHtml(a.advogado)}</strong>${advCad&&(advCad.email||advCad.celular||advCad.oab)?`<div style="font-family:var(--f-mono);font-size:9px;color:#6B7280;margin-top:2px">${_escHtml(advCad.email||'')}${advCad.celular?' · '+_escHtml(advCad.celular):''}${advCad.oab?' · OAB '+_escHtml(advCad.oab):''}</div>`:''}</div>` : ''}
+          ${a.advogado ? `<div style="display:flex;align-items:center;gap:8px">${_equipeAvatarAdv}<div><span style="font-family:var(--f-mono);font-size:8px;text-transform:uppercase;letter-spacing:.07em;color:var(--c-muted)">Advogado</span><br/><strong>${_escHtml(a.advogado)}</strong>${advCad&&(advCad.email||advCad.celular||advCad.oab)?`<div style="font-family:var(--f-mono);font-size:9px;color:#6B7280;margin-top:2px">${_escHtml(advCad.email||'')}${advCad.celular?' · '+_escHtml(advCad.celular):''}${advCad.oab?' · OAB '+_escHtml(advCad.oab):''}</div>`:''}</div></div>` : ''}
           ${a.dados_preposto ? `<div style="margin-top:${a.advogado?'6px':'0'}"><span style="font-family:var(--f-mono);font-size:8px;text-transform:uppercase;letter-spacing:.07em;color:var(--c-muted)">Preposto</span><br/><strong>${_escHtml(a.dados_preposto)}</strong>${prepCad&&(prepCad.email||prepCad.cpf)?`<div style="font-family:var(--f-mono);font-size:9px;color:#6B7280;margin-top:2px">${_escHtml(prepCad.email||'')}${prepCad.celular?' · '+_escHtml(prepCad.celular):''}${prepCad.cpf?' · CPF '+_escHtml(prepCad.cpf):''}</div>`:''}</div>` : ''}
           ${a.testemunhas ? `<div style="margin-top:${(a.advogado||a.dados_preposto)?'6px':'0'}"><span style="font-family:var(--f-mono);font-size:8px;text-transform:uppercase;letter-spacing:.07em;color:#92400e">Testemunha</span><br/><strong>${_escHtml(a.testemunhas)}</strong></div>` : ''}
         </div>` : ''}
@@ -16442,7 +16554,7 @@ async function loadAudiencias(silent) {
       const [{ data, error }, corrRes, equipeRes, mencaoRes, chatRes] = await Promise.all([
         q,
         sb.from('correspondentes').select('nome,tipo,email,celular,cpf,oab,observacoes'),
-        sb.from('equipe').select('id,nome,sigla').order('nome', { ascending: true }),
+        sb.from('equipe').select('id,nome,sigla,foto').order('nome', { ascending: true }),
         sb.from('mencoes').select('*').is('lida_at', null).order('created_at', { ascending: false }).limit(200),
         sb.from('pauta_chat_corr').select('*').order('created_at', { ascending: true }),
       ]);
@@ -16451,6 +16563,11 @@ async function loadAudiencias(silent) {
       if (error) console.warn('audiencias load error:', error.message);
       if (!error && data) items = data;
       window._audCorrespondentes = corrRes.data || [];
+      if (equipeRes.error) {
+        // Coluna "foto" ainda não migrada: recarrega sem ela para não quebrar as menções.
+        const r2 = await sb.from('equipe').select('id,nome,sigla').order('nome', { ascending: true });
+        equipeRes.data = r2.data;
+      }
       window._audEquipe = equipeRes.data || [];
       window._mencaoPendentes = mencaoRes.data || [];
       const badge = document.getElementById('mencao-badge');
