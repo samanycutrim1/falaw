@@ -5758,6 +5758,7 @@ function renderEquipe() {
 
   list.innerHTML = sorted.map(m => `
     <div class="item-card">
+      <span data-foto-membro="${m.id}" style="margin-right:12px;flex-shrink:0;display:inline-flex">${_equipeAvatar({ nome: m.name, foto: (window._equipeFotos || {})[m.id] }, 44)}</span>
       <div class="item-card-body">
         <div class="item-card-title">
           ${escHtml(m.name)}
@@ -5774,6 +5775,27 @@ function renderEquipe() {
       </div>
     </div>
   `).join('');
+  _equipeCarregarFotos();
+}
+
+// Fotos internas ficam só no Supabase (equipe.foto): carrega em segundo plano e
+// atualiza os avatares da lista sem republicar nada no site.
+async function _equipeCarregarFotos() {
+  try {
+    const { sbUrl, sbKey } = getSbCreds();
+    if (!sbUrl || !sbKey) return;
+    const sb = supabase.createClient(sbUrl, sbKey, { global: { headers: { 'X-Client-App': 'admin' } } });
+    const { data, error } = await sb.from('equipe').select('id,foto');
+    if (error) { console.warn('equipe fotos:', error.message); return; }
+    window._equipeFotos = {};
+    (data || []).forEach(r => { if (r.foto) window._equipeFotos[r.id] = r.foto; });
+    const nomes = {};
+    (load(KEYS.members) || []).forEach(m => { nomes[m.id] = m.name; });
+    document.querySelectorAll('[data-foto-membro]').forEach(el => {
+      const id = el.getAttribute('data-foto-membro');
+      el.innerHTML = _equipeAvatar({ nome: nomes[id], foto: window._equipeFotos[id] }, 44);
+    });
+  } catch (e) { console.warn('equipe fotos:', e.message); }
 }
 
 let editingMemberId = null;
@@ -5949,6 +5971,7 @@ function saveMember() {
 
   closeMemberModal();
   renderEquipe();
+  if (_memberFoto.dirty && _memberFoto.loaded && id) { (window._equipeFotos = window._equipeFotos || {})[id] = _memberFoto.valor || ''; renderEquipe(); }
   showToast('Salvando no GitHub…');
   pushTeamToGitHub().then(ok => showToast(ok ? (id ? 'Membro atualizado.' : 'Membro adicionado.') : 'Salvo localmente, mas falhou no GitHub.'));
 }
