@@ -15742,7 +15742,9 @@ function _mencaoHighlight(text, audId) {
       : _mencaoFoiAberta(pend)
         ? ['background:#FEF3C7;color:#B45309', 'Menção aberta, aguardando baixa']
         : ['background:#FEE2E2;color:#B91C1C', 'Menção ainda não aberta'];
-    html = html.replace(re, m => `<strong style="${st};border-radius:3px;padding:0 3px" title="${tit}">${m}</strong>`);
+    // Com foto cadastrada, mostra o avatar da pessoa marcada dentro do destaque da @marcação.
+    const av = c.foto ? _equipeAvatar(c, 16) + ' ' : '';
+    html = html.replace(re, m => `<strong style="${st};border-radius:3px;padding:0 3px;display:inline-flex;align-items:center;gap:3px;vertical-align:middle" title="${tit}">${av}${m}</strong>`);
   });
   return html;
 }
