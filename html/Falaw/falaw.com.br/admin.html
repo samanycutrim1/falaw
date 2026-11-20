@@ -3954,6 +3954,7 @@ function _entrarNoAdmin(ac) {
   loadContatoFromSupabase().then(renderContato);
   loadConfig();
   loadNotifBadges();
+  _acessoMonitorIniciar();
 }
 
 function _mostrarTrocaSenha(sb, onOk) {
@@ -3991,7 +3992,7 @@ function _abaPermitida(name) {
   if (sessionStorage.getItem('fa_admin_role') !== 'membro') return true;
   return _abasMembro().includes(name);
 }
-function _aplicarAbasMembro() {
+function _aplicarAbasMembro(manterAbaAtual) {
   const abas = _abasMembro();
   const ids = (window.FalawAcesso ? FalawAcesso.ABAS : []).map(a => a.id);
   ids.forEach(id => {
@@ -4010,9 +4011,47 @@ function _aplicarAbasMembro() {
     if (campoValores) campoValores.style.display = 'none';
   }
   const primeira = ids.find(id => abas.includes(id));
+  if (manterAbaAtual && abas.includes(window._liveCurrentTab)) return;
   if (primeira) switchTab(primeira);
   else document.querySelectorAll('.admin-section').forEach(x => x.classList.remove('active'));
 }
+
+/* ─── Mudanças de acesso valem sem a pessoa sair ─────────────────────────
+   O admin de um membro confere o acesso dele a cada minuto e ao voltar para a aba.
+   Abas/tipo mudaram: reaplica na hora. Login desativado, tipo dashboard ou acesso
+   removido: encerra a sessão. */
+let _acessoMonitorTimer = null;
+async function _revalidarAcesso() {
+  if (sessionStorage.getItem('fa_admin_role') !== 'membro' || !window.FalawAcesso) return;
+  const sb = getSB();
+  if (!sb) return;
+  const r = await FalawAcesso.meuAcesso(sb);
+  if (!r.ok) return; // sem como verificar agora (rede): mantém
+  const a = r.data;
+  if (!a || (!a.superadmin && (!a.ativo || a.tipo !== 'admin'))) {
+    doLogout();
+    const e = document.getElementById('login-error');
+    e.textContent = 'Seu acesso foi alterado ou desativado. Entre novamente.';
+    e.style.display = 'block';
+    return;
+  }
+  if (a.superadmin) return;
+  const novas = JSON.stringify([...(a.abas || [])].sort());
+  const atuais = JSON.stringify([..._abasMembro()].sort());
+  if (novas === atuais) return;
+  sessionStorage.setItem('fa_admin_abas', JSON.stringify(a.abas || []));
+  if (localStorage.getItem('fa_admin_persist')) localStorage.setItem('fa_admin_persist_abas', JSON.stringify(a.abas || []));
+  document.querySelectorAll('.admin-tab-group, .admin-tab, .admin-dropdown-item').forEach(el => { el.style.display = ''; });
+  const campoValores = document.getElementById('aud-valor-fields');
+  if (campoValores) campoValores.style.display = '';
+  _aplicarAbasMembro(true);
+}
+function _acessoMonitorIniciar() {
+  clearInterval(_acessoMonitorTimer);
+  if (sessionStorage.getItem('fa_admin_role') !== 'membro') return;
+  _acessoMonitorTimer = setInterval(_revalidarAcesso, 60000);
+}
+document.addEventListener('visibilitychange', () => { if (!document.hidden) _revalidarAcesso(); });
 
 async function doLogin() {
   const errEl = document.getElementById('login-error');
@@ -4249,6 +4288,7 @@ if (window.matchMedia) {
 document.addEventListener('DOMContentLoaded', () => _temaAplicar(_temaAtual()));
 
 function doLogout() {
+  clearInterval(_acessoMonitorTimer);
   const sb = getSB();
   if (sb && sessionStorage.getItem('fa_admin_supabase_auth') === '1') {
     sb.auth.signOut().catch(() => {});
@@ -4305,6 +4345,7 @@ function _autoRestoreSession() {
   loadContatoFromSupabase().then(renderContato);
   loadConfig();
   loadNotifBadges();
+  _acessoMonitorIniciar();
   if (isSupa) {
     // Admin restaurado de uma conta Supabase: sem sessão ativa o banco trataria as chamadas como anônimas.
     const sb = getSB();
@@ -5957,7 +5998,7 @@ window._equipeAcessos = window._equipeAcessos || {};
 let _acessoMembroId = null;
 
 function _acessoResumo(a) {
-  if (!a) return 'Acesso: sem login';
+  if (!a) return 'Acesso: não criado';
   if (!a.ativo) return 'Acesso: login desativado';
   const tipo = a.tipo === 'admin' ? `Admin · ${(a.abas || []).length} aba(s)` : 'Dashboard do escritório';
   return 'Acesso: login ativo · ' + tipo + (a.must_change ? ' · troca de senha pendente' : '');
