@@ -15,6 +15,7 @@
   <script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
   <script src="../sb-config.js" onerror="void 0"></script>
   <script src="../acesso-api.js"></script>
+  <script src="../pauta-chat.js"></script>
   <script>(function(){try{var t=localStorage.getItem('falaw_theme');if(!t&&localStorage.getItem('falaw_dark_mode')==='1')t='escuro';t=t||'claro';if(t==='auto')t=window.matchMedia&&matchMedia('(prefers-color-scheme: dark)').matches?'escuro':'claro';if(t!=='claro')document.documentElement.classList.add('tema-'+t);}catch(e){}})();</script>
   <style>
     @import url('https://fonts.googleapis.com/css2?family=Sora:wght@600;700;800&family=IBM+Plex+Mono:wght@400;500&family=Inter:wght@300;400;500;600&display=swap');
@@ -2855,15 +2856,17 @@ function _escParseObs(obs) {
 function _escThreadHtml(obs, id) {
   return _escParseObs(obs).map((m, i) => {
     const isEsc = /escrit/i.test(m.meta);
-    const borda = isEsc ? '#7B1A2E' : '#0D2B5E';
     // Só mensagens enviadas pelo próprio escritório podem ser editadas por aqui;
     // as do admin (ou legadas, sem meta) são somente leitura nesta tela.
-    return `<div style="background:#fff;border-left:2px solid ${borda};border-radius:3px;padding:5px 8px;margin-top:4px;display:flex;gap:8px;align-items:flex-start">`
-      + `<div style="flex:1;min-width:0" id="esc-orient-msg-${id}-${i}">`
-      + (m.meta ? `<div style="font-family:monospace;font-size:8px;letter-spacing:.05em;text-transform:uppercase;color:#6B7280;margin-bottom:2px">${escHtml(m.meta)}</div>` : '')
-      + `<div style="font-family:monospace;font-size:10px;letter-spacing:.04em;color:#0D2B5E">${_mencaoHighlight(m.text, id)}</div></div>`
-      + (id && isEsc ? `<button onclick="escEditMsgStart('${id}',${i})" title="Editar esta mensagem" style="background:none;border:none;color:#9CA3AF;font-size:11px;line-height:1;cursor:pointer;padding:2px 4px;flex-shrink:0" onmouseenter="this.style.color='#0D2B5E'" onmouseleave="this.style.color='#9CA3AF'">✎</button>` : '')
-      + `</div>`;
+    const acoes = (id && isEsc)
+      ? `<button onclick="escEditMsgStart('${id}',${i})" title="Editar esta mensagem" style="background:none;border:none;color:#9CA3AF;font-size:11px;line-height:1;cursor:pointer;padding:0 2px;flex-shrink:0" onmouseenter="this.style.color='#0D2B5E'" onmouseleave="this.style.color='#9CA3AF'">✎</button>`
+      : '';
+    return FalawChat.mensagemHtml({
+      meta: m.meta, euNome: _escAutorNome(), equipe: window._escEquipe || [],
+      avatar: _equipeAvatar, esc: escHtml,
+      textoHtml: _mencaoHighlight(m.text, id), idTexto: `esc-orient-msg-${id}-${i}`,
+      acoesHtml: acoes, mono: 'monospace'
+    });
   }).join('');
 }
 
