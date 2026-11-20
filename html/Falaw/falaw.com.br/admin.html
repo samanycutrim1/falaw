@@ -6103,8 +6103,15 @@ async function acessoSalvar() {
   }
   if (!r.ok) return _acessoMostrarErro(r);
   await _equipeCarregarAcessos();
+  let aviso = '';
+  if (criado && !window._equipeAcessos[id]) {
+    // O banco criou o acesso, mas a leitura da tabela não devolveu a linha (regra de segurança de linha).
+    window._equipeAcessos[id] = { equipe_id: id, email: (m.email || '').trim().toLowerCase(), ativo: true, tipo, abas, must_change: true };
+    _equipePintarAcessos();
+    aviso = ' Atenção: a lista não conseguiu ler a tabela equipe_acessos. Rode no Supabase a migração 20261120_equipe_acessos_listar.sql para a página mostrar os acessos criados depois de recarregar.';
+  }
   openAcessoModal(id);
-  _acessoMsg(criado ? 'Acesso criado. Passe a senha padrão à pessoa: ela terá de trocá-la no primeiro login.' : 'Acesso salvo.', true);
+  _acessoMsg((criado ? 'Acesso criado. Passe a senha padrão à pessoa: ela terá de trocá-la no primeiro login.' : 'Acesso salvo.') + aviso, true);
 }
 async function acessoRedefinir() {
   const id = _acessoMembroId;
