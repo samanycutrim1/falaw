@@ -5980,6 +5980,17 @@ function _acessoMsg(txt, ok) {
   el.style.color = ok ? '#1B7A4E' : '#B4231F';
   el.style.display = txt ? 'block' : 'none';
 }
+// Explica por que o banco recusou (sem_permissao): quase sempre a sessão não é de uma conta individual marcada.
+function _acessoErro(r) {
+  if (r.erro !== 'sem_permissao') return r.mensagem;
+  if (sessionStorage.getItem('fa_admin_supabase_auth') !== '1') {
+    return 'Você entrou pela senha antiga, sem conta individual. Saia e entre com o e-mail e a senha da conta do superadmin (Supabase) para gerenciar acessos.';
+  }
+  if (sessionStorage.getItem('fa_admin_role') === 'membro') {
+    return 'Sua conta não tem permissão para gerenciar acessos (precisa ser superadmin ou ter a aba Equipe liberada).';
+  }
+  return 'Esta conta não está marcada como superadmin no Supabase (app_metadata.superadmin). Marque a conta, saia e entre de novo.';
+}
 function _acessoTipo() { return document.querySelector('input[name="acesso-tipo"]:checked').value; }
 function _acessoAbasMarcadas() { return [...document.querySelectorAll('#acesso-abas input:checked')].map(i => i.value); }
 function acessoToggleTipo() { document.getElementById('acesso-abas-wrap').style.display = _acessoTipo() === 'admin' ? '' : 'none'; }
@@ -6043,7 +6054,7 @@ async function acessoSalvar() {
   } else {
     r = await FalawAcesso.atualizarAcesso(sb, { equipeId: id, ativo: document.getElementById('acesso-ativo').checked, tipo, abas });
   }
-  if (!r.ok) return _acessoMsg(r.mensagem);
+  if (!r.ok) return _acessoMsg(_acessoErro(r));
   await _equipeCarregarAcessos();
   openAcessoModal(id);
   _acessoMsg(criado ? 'Acesso criado. Passe a senha padrão à pessoa: ela terá de trocá-la no primeiro login.' : 'Acesso salvo.', true);
@@ -6057,7 +6068,7 @@ async function acessoRedefinir() {
   if (!confirm('Redefinir a senha desta pessoa? A senha atual deixa de valer e ela terá de criar uma nova no próximo login.')) return;
   const r = await FalawAcesso.redefinirSenha(sb, { equipeId: id, senha });
   document.getElementById('acesso-senha-reset').value = '';
-  if (!r.ok) return _acessoMsg(r.mensagem);
+  if (!r.ok) return _acessoMsg(_acessoErro(r));
   await _equipeCarregarAcessos();
   openAcessoModal(id);
   _acessoMsg('Senha redefinida. Passe a nova senha padrão à pessoa: ela terá de trocá-la no próximo login.', true);
