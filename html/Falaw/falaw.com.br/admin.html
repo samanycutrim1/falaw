@@ -4305,6 +4305,11 @@ function _autoRestoreSession() {
   loadContatoFromSupabase().then(renderContato);
   loadConfig();
   loadNotifBadges();
+  if (isSupa) {
+    // Admin restaurado de uma conta Supabase: sem sessão ativa o banco trataria as chamadas como anônimas.
+    const sb = getSB();
+    if (sb) sb.auth.getSession().then(({ data }) => { if (!data || !data.session) doLogout(); }).catch(() => {});
+  }
 }
 
 /* ══════════════════════════════════════
@@ -5980,16 +5985,58 @@ function _acessoMsg(txt, ok) {
   el.style.color = ok ? '#1B7A4E' : '#B4231F';
   el.style.display = txt ? 'block' : 'none';
 }
-// Explica por que o banco recusou (sem_permissao): quase sempre a sessão não é de uma conta individual marcada.
-function _acessoErro(r) {
-  if (r.erro !== 'sem_permissao') return r.mensagem;
-  if (sessionStorage.getItem('fa_admin_supabase_auth') !== '1') {
-    return 'Você entrou pela senha antiga, sem conta individual. Saia e entre com o e-mail e a senha da conta do superadmin (Supabase) para gerenciar acessos.';
-  }
+// Lê a sessão do Supabase deste navegador: e-mail e se o token traz a marca de superadmin.
+async function _acessoDiagnostico() {
+  try {
+    const { data } = await getSB().auth.getSession();
+    const ses = data && data.session;
+    if (!ses) return { sessao: false };
+    let claims = {};
+    try { claims = JSON.parse(atob(ses.access_token.split('.')[1].replace(/-/g, '+').replace(/_/g, '/'))); } catch (_) {}
+    return {
+      sessao: true,
+      email: claims.email || (ses.user && ses.user.email) || '',
+      superadmin: !!(claims.app_metadata && claims.app_metadata.superadmin === true)
+    };
+  } catch (_) { return null; }
+}
+function _acessoMsgHtml(html) {
+  const el = document.getElementById('acesso-msg');
+  el.innerHTML = html;
+  el.style.color = '#B4231F';
+  el.style.display = 'block';
+}
+function acessoCopiarSql() {
+  const t = window._acessoSqlCopiar || '';
+  (navigator.clipboard ? navigator.clipboard.writeText(t) : Promise.reject()).then(
+    () => { const b = document.getElementById('acesso-copiar'); if (b) b.textContent = 'Copiado ✓'; },
+    () => { const pre = document.getElementById('acesso-sql'); if (pre) { const r = document.createRange(); r.selectNodeContents(pre); const sel = getSelection(); sel.removeAllRanges(); sel.addRange(r); } }
+  );
+}
+function acessoSairEEntrar() { closeAcessoModal(); doLogout(); }
+
+// Mostra o erro de uma ação. Para sem_permissao, diz exatamente qual conta está logada e o que falta.
+async function _acessoMostrarErro(r) {
+  if (r.erro !== 'sem_permissao') return _acessoMsg(r.mensagem);
   if (sessionStorage.getItem('fa_admin_role') === 'membro') {
-    return 'Sua conta não tem permissão para gerenciar acessos (precisa ser superadmin ou ter a aba Equipe liberada).';
+    return _acessoMsg('Sua conta não tem permissão para gerenciar acessos (precisa ser superadmin ou ter a aba Equipe liberada).');
   }
-  return 'Esta conta não está marcada como superadmin no Supabase (app_metadata.superadmin). Marque a conta, saia e entre de novo.';
+  const d = await _acessoDiagnostico();
+  const sair = '<button type="button" class="btn btn-ghost btn-sm" onclick="acessoSairEEntrar()">Sair e entrar de novo</button>';
+  if (!d || !d.sessao) {
+    return _acessoMsgHtml('Não há sessão do Supabase ativa neste navegador (você entrou pela senha antiga ou a sessão expirou). '
+      + 'Saia e entre com o e-mail e a senha da conta do superadmin.<div style="margin-top:8px">' + sair + '</div>');
+  }
+  if (!d.superadmin) {
+    const email = String(d.email || '');
+    window._acessoSqlCopiar = "UPDATE auth.users\n   SET raw_app_meta_data = coalesce(raw_app_meta_data, '{}'::jsonb) || '{\"superadmin\": true}'::jsonb\n WHERE email = '" + email.replace(/'/g, "''") + "';";
+    return _acessoMsgHtml('Você está logado como <b>' + escHtml(email) + '</b>, e esta conta <b>não está marcada como superadmin</b> no Supabase. '
+      + 'No <b>SQL Editor</b> do Supabase, rode:'
+      + '<pre id="acesso-sql" style="white-space:pre-wrap;font-size:11px;background:rgba(127,127,127,.15);padding:8px;border-radius:4px;margin:8px 0;color:inherit;user-select:all">' + escHtml(window._acessoSqlCopiar) + '</pre>'
+      + 'Depois clique em "Sair e entrar de novo" (o token só ganha a marca num novo login).'
+      + '<div style="margin-top:8px;display:flex;gap:8px"><button type="button" class="btn btn-ghost btn-sm" id="acesso-copiar" onclick="acessoCopiarSql()">Copiar SQL</button>' + sair + '</div>');
+  }
+  return _acessoMsg('O token desta conta já tem a marca de superadmin, mas o banco recusou. Confira se a migração da fase 1 (função falaw_pode_gerenciar_acessos) está aplicada no Supabase.');
 }
 function _acessoTipo() { return document.querySelector('input[name="acesso-tipo"]:checked').value; }
 function _acessoAbasMarcadas() { return [...document.querySelectorAll('#acesso-abas input:checked')].map(i => i.value); }
@@ -6054,7 +6101,7 @@ async function acessoSalvar() {
   } else {
     r = await FalawAcesso.atualizarAcesso(sb, { equipeId: id, ativo: document.getElementById('acesso-ativo').checked, tipo, abas });
   }
-  if (!r.ok) return _acessoMsg(_acessoErro(r));
+  if (!r.ok) return _acessoMostrarErro(r);
   await _equipeCarregarAcessos();
   openAcessoModal(id);
   _acessoMsg(criado ? 'Acesso criado. Passe a senha padrão à pessoa: ela terá de trocá-la no primeiro login.' : 'Acesso salvo.', true);
@@ -6068,7 +6115,7 @@ async function acessoRedefinir() {
   if (!confirm('Redefinir a senha desta pessoa? A senha atual deixa de valer e ela terá de criar uma nova no próximo login.')) return;
   const r = await FalawAcesso.redefinirSenha(sb, { equipeId: id, senha });
   document.getElementById('acesso-senha-reset').value = '';
-  if (!r.ok) return _acessoMsg(_acessoErro(r));
+  if (!r.ok) return _acessoMostrarErro(r);
   await _equipeCarregarAcessos();
   openAcessoModal(id);
   _acessoMsg('Senha redefinida. Passe a nova senha padrão à pessoa: ela terá de trocá-la no próximo login.', true);
