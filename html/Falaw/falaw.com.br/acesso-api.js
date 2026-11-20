@@ -90,9 +90,14 @@
       });
     },
 
-    /** Lista os acessos já criados (para a página Equipe). */
+    /** Lista os acessos já criados (para a página Equipe).
+     *  Usa a função falaw_listar_acessos (não depende da regra de leitura da tabela); se a
+     *  função ainda não existir no banco, cai para o SELECT direto. */
     listarAcessos: async function (sb) {
       try {
+        var f = await sb.rpc('falaw_listar_acessos');
+        if (!f.error) return { ok: true, data: f.data || [] };
+        if (/sem_permissao/.test(String(f.error.message || ''))) return falha(f.error);
         var r = await sb.from('equipe_acessos')
           .select('equipe_id,email,ativo,tipo,abas,must_change');
         if (r.error) return falha(r.error);
