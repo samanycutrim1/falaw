@@ -78,7 +78,7 @@
     }
 
     /* ── LOGIN ── */
-    #login-screen {
+    #login-screen, #troca-screen {
       display: flex;
       align-items: center;
       justify-content: center;
@@ -947,6 +947,20 @@
     </label>
     <button onclick="doLogin()">Entrar →</button>
     <p class="login-error" id="login-error">Senha incorreta. Tente novamente.</p>
+  </div>
+</div>
+
+<!-- Troca obrigatória da senha padrão (primeiro login) -->
+<div id="troca-screen" style="display:none">
+  <div class="login-box">
+    <img src="../../../assets/images/Falaw/falaw.com.br/wp-content/uploads/2024/06/logo-falaw.png"
+         alt="Falaw Advogados" class="login-logo" />
+    <p>Crie sua senha pessoal para continuar</p>
+    <input type="password" id="troca-nova" placeholder="Nova senha (mín. 8 caracteres)" maxlength="128" autocomplete="new-password" />
+    <input type="password" id="troca-nova2" placeholder="Repita a nova senha" maxlength="128" autocomplete="new-password" />
+    <button type="button" id="troca-ok">Salvar e entrar →</button>
+    <p class="login-error" id="troca-error"></p>
+    <button type="button" id="troca-sair" style="background:none;color:rgba(26,10,13,.55);margin-top:6px">Sair</button>
   </div>
 </div>
 
@@ -3309,6 +3323,7 @@ Ex: 0020123-64.2024.5.04.0382 - JOÃO SILVA (Deserção)"></textarea>
 <!-- TOAST -->
 <div id="toast"></div>
 
+<script src="acesso-api.js"></script>
 <script>
 /* ══════════════════════════════════════
    CONSTANTS
@@ -3849,6 +3864,104 @@ function _checkLock() {
   return null;
 }
 
+/* ─── ACESSO INDIVIDUAL (Supabase Auth + tabela equipe_acessos) ───────────
+   Papéis: 'superadmin' (marca app_metadata.superadmin no Supabase),
+           'membro' (tipo admin com abas liberadas), 'restrito' (legado).    */
+async function _resolverAcessoSupabase(sb, authEmail) {
+  // Compatibilidade — REMOVER na fase 5: conta Supabase sem registro em equipe_acessos.
+  const legado = () => {
+    const RESTRITOS = ['audiencias@falaw.com.br'];
+    return { ok: true, role: RESTRITOS.includes(authEmail.toLowerCase()) ? 'restrito' : 'superadmin', abas: [], mustChange: false };
+  };
+  if (!window.FalawAcesso) return legado();
+  const r = await FalawAcesso.meuAcesso(sb);
+  if (!r.ok || !r.data) return legado();
+  const a = r.data;
+  if (a.superadmin) return { ok: true, role: 'superadmin', abas: [], mustChange: false };
+  if (!a.ativo) return { ok: false, msg: 'Seu acesso está desativado. Procure a administração.' };
+  if (a.tipo !== 'admin') return { ok: false, msg: 'Seu acesso é ao dashboard do escritório, em falaw.com.br/cliente.' };
+  return { ok: true, role: 'membro', abas: a.abas || [], mustChange: !!a.must_change };
+}
+
+function _entrarNoAdmin(ac) {
+  sessionStorage.setItem('fa_admin_session', String(Date.now()));
+  sessionStorage.setItem('fa_admin_supabase_auth', '1');
+  sessionStorage.setItem('fa_admin_role', ac.role);
+  sessionStorage.setItem('fa_admin_abas', JSON.stringify(ac.abas || []));
+  _savePersistIfChecked(ac.role, true);
+  document.getElementById('troca-screen').style.display = 'none';
+  document.getElementById('login-screen').style.display = 'none';
+  document.getElementById('admin-shell').style.display = 'block';
+  _mencaoIniciarBalao();
+  document.getElementById('login-error').style.display = 'none';
+  applyRoleRestrictions();
+  seedData();
+  loadArticlesFromGitHub().then(renderBlog);
+  renderEquipe();
+  loadNewsletterFromSupabase().then(renderNewsletter);
+  loadContatoFromSupabase().then(renderContato);
+  loadConfig();
+  loadNotifBadges();
+}
+
+function _mostrarTrocaSenha(sb, onOk) {
+  const box = document.getElementById('troca-screen');
+  const n1 = document.getElementById('troca-nova'), n2 = document.getElementById('troca-nova2');
+  const err = document.getElementById('troca-error'), btn = document.getElementById('troca-ok');
+  const msg = t => { err.textContent = t; err.style.display = 'block'; };
+  document.getElementById('login-screen').style.display = 'none';
+  box.style.display = 'flex';
+  n1.value = ''; n2.value = ''; err.style.display = 'none';
+  n1.focus();
+  btn.onclick = async () => {
+    if (n1.value.length < 8) return msg('A nova senha precisa ter pelo menos 8 caracteres.');
+    if (n1.value !== n2.value) return msg('As senhas não conferem.');
+    btn.disabled = true;
+    const r = await FalawAcesso.trocarSenhaPropria(sb, n1.value);
+    btn.disabled = false;
+    if (!r.ok) return msg(r.mensagem);
+    n1.value = ''; n2.value = '';
+    onOk();
+  };
+  [n1, n2].forEach(el => { el.onkeydown = e => { if (e.key === 'Enter') btn.click(); }; });
+  document.getElementById('troca-sair').onclick = () => {
+    sb.auth.signOut().catch(() => {});
+    box.style.display = 'none';
+    document.getElementById('login-screen').style.display = 'flex';
+    document.getElementById('login-pwd').value = '';
+  };
+}
+
+function _abasMembro() {
+  try { return JSON.parse(sessionStorage.getItem('fa_admin_abas') || '[]'); } catch (_) { return []; }
+}
+function _abaPermitida(name) {
+  if (sessionStorage.getItem('fa_admin_role') !== 'membro') return true;
+  return _abasMembro().includes(name);
+}
+function _aplicarAbasMembro() {
+  const abas = _abasMembro();
+  const ids = (window.FalawAcesso ? FalawAcesso.ABAS : []).map(a => a.id);
+  ids.forEach(id => {
+    if (abas.includes(id)) return;
+    const el = document.getElementById('ditem-' + id) || document.getElementById('tab-btn-' + id);
+    if (el) el.style.display = 'none';
+  });
+  ['conteudo', 'gestao', 'dashboards', 'pesquisas'].forEach(g => {
+    const grp = document.getElementById('group-' + g);
+    if (!grp) return;
+    const itens = [...grp.querySelectorAll('.admin-dropdown-item')];
+    if (itens.length && itens.every(i => i.style.display === 'none')) grp.style.display = 'none';
+  });
+  if (!abas.includes('financeiro')) {
+    const campoValores = document.getElementById('aud-valor-fields');
+    if (campoValores) campoValores.style.display = 'none';
+  }
+  const primeira = ids.find(id => abas.includes(id));
+  if (primeira) switchTab(primeira);
+  else document.querySelectorAll('.admin-section').forEach(x => x.classList.remove('active'));
+}
+
 async function doLogin() {
   const errEl = document.getElementById('login-error');
   const lockMsg = _checkLock();
@@ -3863,31 +3976,23 @@ async function doLogin() {
   if (sb && authEmail) {
     try {
       const { error } = await sb.auth.signInWithPassword({ email: authEmail, password: pwd });
+      if (error && /banned/i.test(error.message || '')) {
+        errEl.textContent = 'Seu acesso está desativado. Procure a administração.';
+        errEl.style.display = 'block';
+        return;
+      }
       if (!error) {
         localStorage.setItem(AUTH_EMAIL_KEY, authEmail);
         _setLock({ attempts: 0, lockedUntil: 0 });
-        sessionStorage.setItem('fa_admin_session', String(Date.now()));
-        sessionStorage.setItem('fa_admin_supabase_auth', '1');
-        // Papel baseado no e-mail — sem necessidade de tabela no banco
-        const EMAILS_RESTRITOS = [
-          'audiencias@falaw.com.br',
-          // adicione outros e-mails restritos aqui
-        ];
-        const role = EMAILS_RESTRITOS.includes(authEmail.toLowerCase()) ? 'restrito' : 'superadmin';
-        sessionStorage.setItem('fa_admin_role', role);
-        _savePersistIfChecked(role, true);
-        document.getElementById('login-screen').style.display = 'none';
-        document.getElementById('admin-shell').style.display = 'block';
-    _mencaoIniciarBalao();
-        errEl.style.display = 'none';
-        applyRoleRestrictions();
-        seedData();
-        loadArticlesFromGitHub().then(renderBlog);
-        renderEquipe();
-        loadNewsletterFromSupabase().then(renderNewsletter);
-        loadContatoFromSupabase().then(renderContato);
-        loadConfig();
-        loadNotifBadges();
+        const ac = await _resolverAcessoSupabase(sb, authEmail);
+        if (!ac.ok) {
+          try { await sb.auth.signOut(); } catch (_) {}
+          errEl.textContent = ac.msg;
+          errEl.style.display = 'block';
+          return;
+        }
+        if (ac.mustChange) { _mostrarTrocaSenha(sb, () => _entrarNoAdmin(ac)); return; }
+        _entrarNoAdmin(ac);
         return;
       }
     } catch (e) {
@@ -3995,6 +4100,7 @@ function applyRoleRestrictions() {
   _liveInit();
   _livePollInit();
   const role = sessionStorage.getItem('fa_admin_role') || 'superadmin';
+  if (role === 'membro') { _aplicarAbasMembro(); return; }
   if (role !== 'restrito') return; // superadmin: nenhuma restrição
 
   // Ocultar grupos Conteúdo e Dashboards inteiros
@@ -4032,7 +4138,9 @@ function applyRoleRestrictions() {
 // aos correspondentes — isso é exclusivo do superadmin (aba Financeiro e
 // campos de valor no modal de audiência).
 function _isRestritoRole() {
-  return (sessionStorage.getItem('fa_admin_role') || 'superadmin') === 'restrito';
+  const r = sessionStorage.getItem('fa_admin_role') || 'superadmin';
+  if (r === 'membro') return !_abaPermitida('financeiro');
+  return r === 'restrito';
 }
 
 // ── Temas: Claro, Escuro, Escuro suave, Sépia e Automático (segue o sistema) ──
@@ -4096,10 +4204,12 @@ function doLogout() {
   sessionStorage.removeItem('fa_admin_session');
   sessionStorage.removeItem('fa_admin_supabase_auth');
   sessionStorage.removeItem('fa_admin_role');
+  sessionStorage.removeItem('fa_admin_abas');
   // Limpa persistência
   localStorage.removeItem('fa_admin_persist');
   localStorage.removeItem('fa_admin_persist_role');
   localStorage.removeItem('fa_admin_persist_supabase');
+  localStorage.removeItem('fa_admin_persist_abas');
   // Restaura visibilidade de todos os itens de nav
   document.querySelectorAll('.admin-tab-group, .admin-tab, .admin-dropdown-item').forEach(el => { el.style.display = ''; });
   // Restaura o bloco de valor do correspondente no modal de audiência (fica
@@ -4119,6 +4229,7 @@ function _savePersistIfChecked(role, isSupa) {
     localStorage.setItem('fa_admin_persist', '1');
     localStorage.setItem('fa_admin_persist_role', role || 'superadmin');
     localStorage.setItem('fa_admin_persist_supabase', isSupa ? '1' : '0');
+    localStorage.setItem('fa_admin_persist_abas', sessionStorage.getItem('fa_admin_abas') || '[]');
   }
 }
 
@@ -4129,6 +4240,7 @@ function _autoRestoreSession() {
   const isSupa = localStorage.getItem('fa_admin_persist_supabase') === '1';
   sessionStorage.setItem('fa_admin_session', String(Date.now()));
   sessionStorage.setItem('fa_admin_role', role);
+  sessionStorage.setItem('fa_admin_abas', localStorage.getItem('fa_admin_persist_abas') || '[]');
   if (isSupa) sessionStorage.setItem('fa_admin_supabase_auth', '1');
   document.getElementById('login-screen').style.display = 'none';
   document.getElementById('admin-shell').style.display = 'block';
@@ -4958,6 +5070,7 @@ function _liveInit() {
 ══════════════════════════════════════ */
 
 function switchTab(name) {
+  if (!_abaPermitida(name)) return;
   window._liveCurrentTab = name;
   // Update standalone tab active states
   STANDALONE_TABS.forEach(t => {
