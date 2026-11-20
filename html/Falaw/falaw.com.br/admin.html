@@ -1020,7 +1020,8 @@
       <div class="admin-tab" id="tab-btn-config" onclick="switchTab('config')">Configurações</div>
     </div>
     <div class="theme-picker" style="margin-left:20px"><button type="button" class="theme-toggle-btn" id="themeToggleBtn" onclick="toggleTemaMenu(event)" title="Escolher tema (claro, escuro, sépia…)">☀️ Tema: Claro ▾</button><div class="theme-menu" id="themeMenu"></div></div>
-    <button class="admin-logout" onclick="doLogout()">Sair</button>
+    <span id="admin-perfil" title="Com qual acesso você está neste momento" style="margin-left:auto;font-family:var(--f-mono);font-size:10px;letter-spacing:.06em;color:rgba(247,245,242,.6);max-width:260px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap"></span>
+    <button class="admin-logout" onclick="doLogout()" style="margin-left:12px">Sair</button>
   </nav>
 
   <div class="admin-body">
@@ -3924,16 +3925,16 @@ async function _resolverAcessoSupabase(sb, authEmail) {
   // Compatibilidade — REMOVER na fase 5: conta Supabase sem registro em equipe_acessos.
   const legado = () => {
     const RESTRITOS = ['audiencias@falaw.com.br'];
-    return { ok: true, role: RESTRITOS.includes(authEmail.toLowerCase()) ? 'restrito' : 'superadmin', abas: [], mustChange: false };
+    return { ok: true, perfil: 'legado', role: RESTRITOS.includes(authEmail.toLowerCase()) ? 'restrito' : 'superadmin', abas: [], mustChange: false };
   };
   if (!window.FalawAcesso) return legado();
   const r = await FalawAcesso.meuAcesso(sb);
   if (!r.ok || !r.data) return legado();
   const a = r.data;
-  if (a.superadmin) return { ok: true, role: 'superadmin', abas: [], mustChange: false };
+  if (a.superadmin) return { ok: true, perfil: 'superadmin', role: 'superadmin', abas: [], mustChange: false };
   if (!a.ativo) return { ok: false, msg: 'Seu acesso está desativado. Procure a administração.' };
   if (a.tipo !== 'admin') return { ok: false, msg: 'Seu acesso é ao dashboard do escritório, em falaw.com.br/cliente.' };
-  return { ok: true, role: 'membro', abas: a.abas || [], mustChange: !!a.must_change, equipeId: a.equipe_id || '' };
+  return { ok: true, perfil: 'membro', role: 'membro', abas: a.abas || [], mustChange: !!a.must_change, equipeId: a.equipe_id || '' };
 }
 
 function _entrarNoAdmin(ac) {
@@ -3942,6 +3943,7 @@ function _entrarNoAdmin(ac) {
   sessionStorage.setItem('fa_admin_role', ac.role);
   sessionStorage.setItem('fa_admin_abas', JSON.stringify(ac.abas || []));
   sessionStorage.setItem('fa_admin_equipe_id', ac.equipeId || '');
+  sessionStorage.setItem('fa_admin_perfil', ac.perfil || '');
   _savePersistIfChecked(ac.role, true);
   document.getElementById('troca-screen').style.display = 'none';
   document.getElementById('login-screen').style.display = 'none';
@@ -3957,6 +3959,7 @@ function _entrarNoAdmin(ac) {
   loadConfig();
   loadNotifBadges();
   _acessoMonitorIniciar();
+  _perfilAdminPintar();
 }
 
 function _mostrarTrocaSenha(sb, onOk) {
@@ -3987,6 +3990,21 @@ function _mostrarTrocaSenha(sb, onOk) {
   };
 }
 
+// Selo no topo: com qual acesso a pessoa está agora (ajuda a entender o que ela enxerga).
+function _perfilAdminPintar() {
+  const el = document.getElementById('admin-perfil');
+  if (!el) return;
+  const p = sessionStorage.getItem('fa_admin_perfil');
+  const role = sessionStorage.getItem('fa_admin_role');
+  let txt, alerta = false;
+  if (p === 'superadmin') txt = 'Superadmin';
+  else if (p === 'membro') txt = (_audAutorAdminNome() || 'Membro') + ' · ' + _abasMembro().length + ' aba(s)';
+  else if (p === 'legado') { txt = 'Modo antigo (conta sem acesso na Equipe): vê tudo'; alerta = true; }
+  else { txt = role === 'restrito' ? 'Modo antigo (restrito)' : 'Modo antigo (senha compartilhada): vê tudo'; alerta = true; }
+  el.textContent = txt;
+  el.title = txt;
+  el.style.color = alerta ? '#F5B544' : 'rgba(247,245,242,.6)';
+}
 function _abasMembro() {
   try { return JSON.parse(sessionStorage.getItem('fa_admin_abas') || '[]'); } catch (_) { return []; }
 }
@@ -4047,6 +4065,7 @@ async function _revalidarAcesso() {
   const campoValores = document.getElementById('aud-valor-fields');
   if (campoValores) campoValores.style.display = '';
   _aplicarAbasMembro(true);
+  _perfilAdminPintar();
 }
 function _acessoMonitorIniciar() {
   clearInterval(_acessoMonitorTimer);
@@ -4105,6 +4124,7 @@ async function doLogin() {
     sessionStorage.removeItem('fa_admin_supabase_auth');
     sessionStorage.setItem('fa_admin_role', 'restrito');
     _savePersistIfChecked('restrito', false);
+    sessionStorage.removeItem('fa_admin_perfil'); setTimeout(_perfilAdminPintar, 0);
     document.getElementById('login-screen').style.display = 'none';
     document.getElementById('admin-shell').style.display = 'block';
     _mencaoIniciarBalao();
@@ -4137,6 +4157,7 @@ async function doLogin() {
     }
     sessionStorage.setItem('fa_admin_role', hashRole);
     _savePersistIfChecked(hashRole, false);
+    sessionStorage.removeItem('fa_admin_perfil'); setTimeout(_perfilAdminPintar, 0);
     document.getElementById('login-screen').style.display = 'none';
     document.getElementById('admin-shell').style.display = 'block';
     _mencaoIniciarBalao();
@@ -4300,12 +4321,14 @@ function doLogout() {
   sessionStorage.removeItem('fa_admin_role');
   sessionStorage.removeItem('fa_admin_abas');
   sessionStorage.removeItem('fa_admin_equipe_id');
+  sessionStorage.removeItem('fa_admin_perfil');
   // Limpa persistência
   localStorage.removeItem('fa_admin_persist');
   localStorage.removeItem('fa_admin_persist_role');
   localStorage.removeItem('fa_admin_persist_supabase');
   localStorage.removeItem('fa_admin_persist_abas');
   localStorage.removeItem('fa_admin_persist_equipe');
+  localStorage.removeItem('fa_admin_persist_perfil');
   // Restaura visibilidade de todos os itens de nav
   document.querySelectorAll('.admin-tab-group, .admin-tab, .admin-dropdown-item').forEach(el => { el.style.display = ''; });
   // Restaura o bloco de valor do correspondente no modal de audiência (fica
@@ -4327,6 +4350,7 @@ function _savePersistIfChecked(role, isSupa) {
     localStorage.setItem('fa_admin_persist_supabase', isSupa ? '1' : '0');
     localStorage.setItem('fa_admin_persist_abas', sessionStorage.getItem('fa_admin_abas') || '[]');
     localStorage.setItem('fa_admin_persist_equipe', sessionStorage.getItem('fa_admin_equipe_id') || '');
+    localStorage.setItem('fa_admin_persist_perfil', sessionStorage.getItem('fa_admin_perfil') || '');
   }
 }
 
@@ -4339,6 +4363,7 @@ function _autoRestoreSession() {
   sessionStorage.setItem('fa_admin_role', role);
   sessionStorage.setItem('fa_admin_abas', localStorage.getItem('fa_admin_persist_abas') || '[]');
   sessionStorage.setItem('fa_admin_equipe_id', localStorage.getItem('fa_admin_persist_equipe') || '');
+  sessionStorage.setItem('fa_admin_perfil', localStorage.getItem('fa_admin_persist_perfil') || '');
   if (isSupa) sessionStorage.setItem('fa_admin_supabase_auth', '1');
   document.getElementById('login-screen').style.display = 'none';
   document.getElementById('admin-shell').style.display = 'block';
@@ -4352,6 +4377,7 @@ function _autoRestoreSession() {
   loadConfig();
   loadNotifBadges();
   _acessoMonitorIniciar();
+  _perfilAdminPintar();
   if (isSupa) {
     // Admin restaurado de uma conta Supabase: sem sessão ativa o banco trataria as chamadas como anônimas.
     const sb = getSB();
