@@ -3235,6 +3235,58 @@ Ex: 0020123-64.2024.5.04.0382 - JOÃO SILVA (Deserção)"></textarea>
 </div>
 
 <!-- ══════════════════════════════════════
+     MODAL — ACESSO (LOGIN) DA PESSOA DA EQUIPE
+══════════════════════════════════════ -->
+<div class="modal-overlay" id="acesso-modal">
+  <div class="modal">
+    <div class="modal-header">
+      <h3>Acesso — <span id="acesso-nome"></span></h3>
+      <button class="modal-close" onclick="closeAcessoModal()">×</button>
+    </div>
+    <div class="modal-body">
+      <div class="form-field">
+        <label>Login (e-mail)</label>
+        <div id="acesso-login" style="font-family:var(--f-mono);font-size:13px"></div>
+        <p class="cfg-hint" id="acesso-aviso" style="margin-top:4px;font-size:11px;color:#B4231F;display:none"></p>
+      </div>
+      <div class="form-field" id="acesso-ativo-wrap">
+        <label style="display:flex;align-items:center;gap:8px;cursor:pointer"><input type="checkbox" id="acesso-ativo" style="width:14px;height:14px" /> Login ativo</label>
+      </div>
+      <div class="form-field">
+        <label>Tipo de acesso</label>
+        <label style="display:flex;align-items:center;gap:8px;cursor:pointer;font-weight:400"><input type="radio" name="acesso-tipo" value="admin" onchange="acessoToggleTipo()" style="width:14px;height:14px" /> Admin — escolher as abas liberadas</label>
+        <label style="display:flex;align-items:center;gap:8px;cursor:pointer;font-weight:400;margin-top:6px"><input type="radio" name="acesso-tipo" value="dashboard" onchange="acessoToggleTipo()" style="width:14px;height:14px" /> Só o dashboard do escritório (falaw.com.br/cliente)</label>
+      </div>
+      <div class="form-field" id="acesso-abas-wrap">
+        <label>Abas liberadas
+          <a href="#" onclick="acessoAbasTodas(true);return false" style="font-weight:400;font-size:11px;margin-left:10px">marcar todas</a>
+          <a href="#" onclick="acessoAbasTodas(false);return false" style="font-weight:400;font-size:11px;margin-left:8px">limpar</a>
+        </label>
+        <div id="acesso-abas"></div>
+      </div>
+      <div class="form-field" id="acesso-novo">
+        <label>Senha padrão</label>
+        <input type="password" id="acesso-senha-nova" autocomplete="new-password" maxlength="128" placeholder="Mín. 8 caracteres" />
+        <p class="cfg-hint" style="margin-top:4px;font-size:11px;color:var(--c-muted)">A pessoa é obrigada a trocá-la no primeiro login. Esta senha não fica guardada em lugar nenhum: anote e passe a ela.</p>
+      </div>
+      <div class="form-field" id="acesso-reset">
+        <label>Redefinir senha padrão</label>
+        <div style="display:flex;gap:8px">
+          <input type="password" id="acesso-senha-reset" autocomplete="new-password" maxlength="128" placeholder="Nova senha padrão (mín. 8)" />
+          <button type="button" class="btn btn-ghost" onclick="acessoRedefinir()">Redefinir</button>
+        </div>
+        <p class="cfg-hint" style="margin-top:4px;font-size:11px;color:var(--c-muted)">Troca a senha atual por esta e exige que a pessoa crie uma nova no próximo login.</p>
+      </div>
+      <p id="acesso-msg" role="alert" style="display:none;font-size:12px;margin:8px 0 0"></p>
+    </div>
+    <div class="modal-footer">
+      <button class="btn btn-ghost" onclick="closeAcessoModal()">Fechar</button>
+      <button class="btn btn-primary" id="acesso-salvar" onclick="acessoSalvar()">Criar acesso</button>
+    </div>
+  </div>
+</div>
+
+<!-- ══════════════════════════════════════
      MODAL — DIGEST NEWSLETTER
 ══════════════════════════════════════ -->
 <div class="modal-overlay" id="digest-modal">
@@ -5880,15 +5932,135 @@ function renderEquipe() {
           ${m.oculto ? '<span class="post-tag" title="Não aparece no site público" style="background:#B45309">Oculto no site</span>' : ''}
         </div>
         ${m.email ? `<div class="item-card-meta">${escHtml(m.email)}</div>` : ''}
+        <div class="item-card-meta" data-acesso-membro="${m.id}" style="font-weight:600">${escHtml(_acessoResumo((window._equipeAcessos || {})[m.id]))}</div>
         <div class="item-card-preview">${escHtml(m.bio)}</div>
       </div>
       <div class="item-card-actions">
+        <button type="button" class="btn btn-ghost btn-sm" onclick="openAcessoModal('${m.id}')">Acesso</button>
         <button type="button" class="btn btn-ghost btn-sm" onclick="editMember('${m.id}')">Editar</button>
         <button type="button" class="btn btn-danger btn-sm" onclick="deleteMember('${m.id}')">Excluir</button>
       </div>
     </div>
   `).join('');
   _equipeCarregarFotos();
+  _equipeCarregarAcessos();
+}
+
+/* ── Acesso individual (login) da pessoa da Equipe ──────────────────────
+   Toda chamada de criar/redefinir/atualizar passa por FalawAcesso (acesso-api.js). */
+window._equipeAcessos = window._equipeAcessos || {};
+let _acessoMembroId = null;
+
+function _acessoResumo(a) {
+  if (!a) return 'Acesso: sem login';
+  if (!a.ativo) return 'Acesso: login desativado';
+  const tipo = a.tipo === 'admin' ? `Admin · ${(a.abas || []).length} aba(s)` : 'Dashboard do escritório';
+  return 'Acesso: login ativo · ' + tipo + (a.must_change ? ' · troca de senha pendente' : '');
+}
+function _equipePintarAcessos() {
+  document.querySelectorAll('[data-acesso-membro]').forEach(el => {
+    el.textContent = _acessoResumo(window._equipeAcessos[el.dataset.acessoMembro]);
+  });
+}
+async function _equipeCarregarAcessos() {
+  const sb = getSB();
+  if (!sb || !window.FalawAcesso) return;
+  const r = await FalawAcesso.listarAcessos(sb);
+  if (!r.ok) {
+    document.querySelectorAll('[data-acesso-membro]').forEach(el => { el.textContent = 'Acesso: não foi possível carregar'; });
+    return;
+  }
+  window._equipeAcessos = {};
+  r.data.forEach(a => { window._equipeAcessos[a.equipe_id] = a; });
+  _equipePintarAcessos();
+}
+function _acessoMsg(txt, ok) {
+  const el = document.getElementById('acesso-msg');
+  el.textContent = txt || '';
+  el.style.color = ok ? '#1B7A4E' : '#B4231F';
+  el.style.display = txt ? 'block' : 'none';
+}
+function _acessoTipo() { return document.querySelector('input[name="acesso-tipo"]:checked').value; }
+function _acessoAbasMarcadas() { return [...document.querySelectorAll('#acesso-abas input:checked')].map(i => i.value); }
+function acessoToggleTipo() { document.getElementById('acesso-abas-wrap').style.display = _acessoTipo() === 'admin' ? '' : 'none'; }
+function acessoAbasTodas(v) { document.querySelectorAll('#acesso-abas input').forEach(i => { i.checked = v; }); }
+function _acessoRenderAbas(sel) {
+  const grupos = {};
+  FalawAcesso.ABAS.forEach(a => { (grupos[a.grupo] = grupos[a.grupo] || []).push(a); });
+  document.getElementById('acesso-abas').innerHTML = Object.keys(grupos).map(g =>
+    `<div style="margin:6px 0 2px;font-size:11px;font-family:var(--f-mono);text-transform:uppercase;color:var(--c-muted)">${escHtml(g)}</div>` +
+    grupos[g].map(a => `<label style="display:flex;align-items:center;gap:8px;cursor:pointer;font-weight:400;margin:3px 0"><input type="checkbox" value="${a.id}" ${sel.includes(a.id) ? 'checked' : ''} style="width:14px;height:14px" /> ${escHtml(a.nome)}</label>`).join('')
+  ).join('');
+}
+function openAcessoModal(id) {
+  const m = (load(KEYS.members) || []).find(x => x.id === id);
+  if (!m || !window.FalawAcesso) return;
+  _acessoMembroId = id;
+  const a = window._equipeAcessos[id] || null;
+  document.getElementById('acesso-nome').textContent = m.name;
+  document.getElementById('acesso-login').textContent = (a ? a.email : (m.email || '')) || '— cadastre o e-mail da pessoa em "Editar" —';
+  const aviso = document.getElementById('acesso-aviso');
+  const difere = a && m.email && m.email.trim().toLowerCase() !== a.email.toLowerCase();
+  aviso.textContent = difere ? 'O e-mail do cadastro é diferente do e-mail de login. O login continua sendo o acima.' : '';
+  aviso.style.display = difere ? 'block' : 'none';
+  document.getElementById('acesso-ativo-wrap').style.display = a ? '' : 'none';
+  document.getElementById('acesso-ativo').checked = a ? !!a.ativo : true;
+  document.getElementById('acesso-novo').style.display = a ? 'none' : '';
+  document.getElementById('acesso-reset').style.display = a ? '' : 'none';
+  document.getElementById('acesso-senha-nova').value = '';
+  document.getElementById('acesso-senha-reset').value = '';
+  document.getElementById('acesso-salvar').textContent = a ? 'Salvar acesso' : 'Criar acesso';
+  const tipo = a ? a.tipo : 'admin';
+  document.querySelector(`input[name="acesso-tipo"][value="${tipo}"]`).checked = true;
+  _acessoRenderAbas(a ? (a.abas || []) : ['audiencias']);
+  acessoToggleTipo();
+  _acessoMsg('');
+  document.getElementById('acesso-modal').classList.add('open');
+}
+function closeAcessoModal() {
+  document.getElementById('acesso-senha-nova').value = '';
+  document.getElementById('acesso-senha-reset').value = '';
+  document.getElementById('acesso-modal').classList.remove('open');
+}
+async function acessoSalvar() {
+  const id = _acessoMembroId;
+  const m = (load(KEYS.members) || []).find(x => x.id === id);
+  const sb = getSB();
+  if (!m || !sb) return _acessoMsg('Não foi possível falar com o servidor.');
+  const a = window._equipeAcessos[id] || null;
+  const tipo = _acessoTipo();
+  const abas = tipo === 'admin' ? _acessoAbasMarcadas() : [];
+  if (tipo === 'admin' && !abas.length) return _acessoMsg('Marque ao menos uma aba para o acesso admin.');
+  let r, criado = false;
+  if (!a) {
+    const email = (m.email || '').trim().toLowerCase();
+    if (!email) return _acessoMsg('Cadastre o e-mail da pessoa em "Editar" antes de criar o acesso.');
+    const senha = document.getElementById('acesso-senha-nova').value;
+    if (senha.length < 8) return _acessoMsg('A senha padrão precisa ter pelo menos 8 caracteres.');
+    r = await FalawAcesso.criarUsuario(sb, { equipeId: id, email, senha, tipo, abas });
+    document.getElementById('acesso-senha-nova').value = '';
+    criado = true;
+  } else {
+    r = await FalawAcesso.atualizarAcesso(sb, { equipeId: id, ativo: document.getElementById('acesso-ativo').checked, tipo, abas });
+  }
+  if (!r.ok) return _acessoMsg(r.mensagem);
+  await _equipeCarregarAcessos();
+  openAcessoModal(id);
+  _acessoMsg(criado ? 'Acesso criado. Passe a senha padrão à pessoa: ela terá de trocá-la no primeiro login.' : 'Acesso salvo.', true);
+}
+async function acessoRedefinir() {
+  const id = _acessoMembroId;
+  const sb = getSB();
+  const senha = document.getElementById('acesso-senha-reset').value;
+  if (!sb) return _acessoMsg('Não foi possível falar com o servidor.');
+  if (senha.length < 8) return _acessoMsg('A senha padrão precisa ter pelo menos 8 caracteres.');
+  if (!confirm('Redefinir a senha desta pessoa? A senha atual deixa de valer e ela terá de criar uma nova no próximo login.')) return;
+  const r = await FalawAcesso.redefinirSenha(sb, { equipeId: id, senha });
+  document.getElementById('acesso-senha-reset').value = '';
+  if (!r.ok) return _acessoMsg(r.mensagem);
+  await _equipeCarregarAcessos();
+  openAcessoModal(id);
+  _acessoMsg('Senha redefinida. Passe a nova senha padrão à pessoa: ela terá de trocá-la no próximo login.', true);
 }
 
 // Fotos internas ficam só no Supabase (equipe.foto): carrega em segundo plano e
