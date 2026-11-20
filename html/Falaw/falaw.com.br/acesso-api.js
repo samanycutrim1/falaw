@@ -24,6 +24,12 @@
 
   function falha(error) {
     var texto = String((error && (error.message || error.details)) || error || '');
+    if (/same_password|different from the old password/i.test(texto)) {
+      return { ok: false, erro: 'senha_igual', mensagem: 'A nova senha precisa ser diferente da senha padrão.' };
+    }
+    if (/weak_password|weak password/i.test(texto)) {
+      return { ok: false, erro: 'senha_fraca', mensagem: 'Senha fraca. Use mais caracteres, misturando letras e números.' };
+    }
     var codigo = Object.keys(MENSAGENS).filter(function (k) { return texto.indexOf(k) >= 0; })[0] || 'rede';
     return { ok: false, erro: codigo, mensagem: MENSAGENS[codigo] };
   }
@@ -36,7 +42,31 @@
     } catch (e) { return falha(e); }
   }
 
+  /* Abas do admin que podem ser liberadas (id = nome usado em switchTab). */
+  var ABAS = [
+    { id: 'audiencias',      nome: 'Pauta de Audiências', grupo: 'Pauta' },
+    { id: 'clientes',        nome: 'Clientes',            grupo: 'Gestão' },
+    { id: 'correspondentes', nome: 'Correspondentes',     grupo: 'Gestão' },
+    { id: 'financeiro',      nome: 'Financeiro (valores dos correspondentes)', grupo: 'Gestão' },
+    { id: 'equipe',          nome: 'Equipe (inclui gerenciar acessos)', grupo: 'Gestão' },
+    { id: 'ifood',           nome: 'iFood',               grupo: 'Dashboards' },
+    { id: 'cli-dash',        nome: 'Dashboards de clientes', grupo: 'Dashboards' },
+    { id: 'blog',            nome: 'Blog',                grupo: 'Conteúdo' },
+    { id: 'newsletter',      nome: 'Newsletter',          grupo: 'Conteúdo' },
+    { id: 'contato',         nome: 'Contato',             grupo: 'Conteúdo' },
+    { id: 'curriculos',      nome: 'Currículos',          grupo: 'Conteúdo' },
+    { id: 'comentarios',     nome: 'Comentários',         grupo: 'Conteúdo' },
+    { id: 'informativos',    nome: 'Informativos',        grupo: 'Conteúdo' },
+    { id: 'calendario',      nome: 'Calendário',          grupo: 'Conteúdo' },
+    { id: 'redes-sociais',   nome: 'Redes Sociais',       grupo: 'Conteúdo' },
+    { id: 'pesquisas-lista', nome: 'Pesquisas — Respostas', grupo: 'Pesquisas' },
+    { id: 'pesquisas-dash',  nome: 'Pesquisas — Dashboard', grupo: 'Pesquisas' },
+    { id: 'config',          nome: 'Configurações',       grupo: 'Sistema' }
+  ];
+
   var FalawAcesso = {
+    ABAS: ABAS,
+
     /** Papel da sessão atual: { superadmin, ativo, tipo, abas, must_change, equipe_id } ou null. */
     meuAcesso: function (sb) { return chamar(sb, 'falaw_meu_acesso'); },
 
