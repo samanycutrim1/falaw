@@ -14,6 +14,7 @@
   <script src="https://cdn.jsdelivr.net/npm/pptxgenjs@3.12.0/dist/pptxgen.bundle.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
   <script src="../sb-config.js" onerror="void 0"></script>
+  <script src="../acesso-api.js"></script>
   <script>(function(){try{var t=localStorage.getItem('falaw_theme');if(!t&&localStorage.getItem('falaw_dark_mode')==='1')t='escuro';t=t||'claro';if(t==='auto')t=window.matchMedia&&matchMedia('(prefers-color-scheme: dark)').matches?'escuro':'claro';if(t!=='claro')document.documentElement.classList.add('tema-'+t);}catch(e){}})();</script>
   <style>
     @import url('https://fonts.googleapis.com/css2?family=Sora:wght@600;700;800&family=IBM+Plex+Mono:wght@400;500&family=Inter:wght@300;400;500;600&display=swap');
@@ -999,10 +1000,35 @@ function isNew(iso) {
 function fmt(n) {
   return (n === null || n === undefined) ? '—' : Number(n).toLocaleString('pt-BR');
 }
-function logout() {
+async function logout() {
+  // Encerra também a sessão individual do Supabase (login da Equipe)
+  try {
+    if (window.supabase && window.SB_URL && window.SB_KEY) {
+      const so = window.supabase.createClient(window.SB_URL, window.SB_KEY).auth.signOut().catch(() => {});
+      await Promise.race([so, new Promise(r => setTimeout(r, 800))]);
+    }
+  } catch (e) { /* segue para a saída */ }
   sessionStorage.removeItem('falaw_session');
   window.location.href = 'index.html';
 }
+
+// Sessão da Equipe: precisa continuar válida e ativa no Supabase.
+async function _escValidarSessaoEquipe() {
+  try {
+    const sb = window.supabase.createClient(window.SB_URL, window.SB_KEY);
+    const { data } = await sb.auth.getSession();
+    if (!data || !data.session) return false;
+    const r = await FalawAcesso.meuAcesso(sb);
+    if (!r.ok) return true; // sem como verificar agora (rede): mantém
+    return !!(r.data && (r.data.superadmin || r.data.ativo));
+  } catch (e) { return true; }
+}
+// Nome de quem está na sessão (para assinar mensagens e avisos)
+function _escAutorNome() {
+  const n = String((window._fawSession && window._fawSession.name) || '').replace(/[\[\]\n]/g, '').trim();
+  return n && n !== 'Escritório' ? n : '';
+}
+function _escRotuloAutor() { const n = _escAutorNome(); return n ? 'Escritório · ' + n : 'Escritório'; }
 // ── Temas: Claro, Escuro, Escuro suave, Sépia e Automático (segue o sistema) ──
 const FALAW_TEMAS = [
   { id: 'claro',    icone: '☀️', nome: 'Claro',                curto: 'Claro',  cor: '#F4F2EF' },
@@ -2884,7 +2910,7 @@ async function escEditMsgSave(id, idx) {
   escRenderThread(id);
   if (textoAntigo !== txt) {
     _mencaoRemoverPorTexto(id, textoAntigo);
-    _mencaoRegistrar(id, txt, 'Escritório');
+    _mencaoRegistrar(id, txt, _escAutorNome() || 'Escritório');
   }
 }
 
@@ -4697,7 +4723,7 @@ async function escSaveObsBtn(id) {
   if (!msg) return;
   // Acrescenta ao histórico em vez de sobrescrever — a obs do admin é preservada
   const prev = _escCurrentObs(id);
-  const obs  = (prev ? prev + '\n' : '') + `[${_escObsStamp()} · Escritório] ` + msg;
+  const obs  = (prev ? prev + '\n' : '') + `[${_escObsStamp()} · ${_escRotuloAutor()}] ` + msg;
   const cb   = row.querySelector('input[type=checkbox]');
   const sent = cb ? cb.checked : false;
   _escSaveState(id, sent, obs);
@@ -4713,7 +4739,7 @@ async function escSaveObsBtn(id) {
   }
   // Atualiza o histórico exibido acima
   escRenderThread(id);
-  _mencaoRegistrar(id, msg, 'Escritório');
+  _mencaoRegistrar(id, msg, _escAutorNome() || 'Escritório');
 }
 
 /* ─── PAUTA DE AUDIÊNCIAS ────────────────────────────── */
@@ -5055,8 +5081,9 @@ async function init() {
 
   // ── Escritório: pauta completa de todos os clientes ──
   if (session.isEscritorio) {
-    document.getElementById('sidebarName').textContent  = 'Escritório';
-    document.getElementById('sidebarEmail').textContent = 'audiencias@falaw.com.br';
+    if (String(session.id || '').startsWith('equipe-') && !(await _escValidarSessaoEquipe())) { logout(); return; }
+    document.getElementById('sidebarName').textContent  = session.name || 'Escritório';
+    document.getElementById('sidebarEmail').textContent = session.email || '';
     document.getElementById('topbarCompany').textContent = 'Pauta — Escritório';
     // Esconde nav items irrelevantes; mostra só pauta
     document.getElementById('nav-dashboard').style.display = 'none';

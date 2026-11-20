@@ -276,6 +276,7 @@
   </style>
   <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.js"></script>
   <script src="../sb-config.js" onerror="void 0"></script>
+  <script src="../acesso-api.js"></script>
 </head>
 <body>
 
@@ -301,11 +302,26 @@
         <input id="email" type="email" class="form-input" placeholder="seu@email.com.br" required autocomplete="email" maxlength="254" />
       </div>
       <div class="form-group">
-        <label class="form-label" for="code">Código de Acesso</label>
+        <label class="form-label" for="code">Código de acesso ou senha</label>
         <input id="code" type="password" class="form-input" placeholder="••••••••" required autocomplete="current-password" maxlength="128" />
       </div>
       <div class="form-error" id="loginError">E-mail ou código de acesso inválidos.</div>
       <button type="submit" class="btn-login" id="loginBtn">Entrar</button>
+    </form>
+
+    <!-- Troca obrigatória da senha padrão (primeiro login da Equipe) -->
+    <form id="trocaForm" style="display:none" onsubmit="return false">
+      <p class="login-subtitle" style="margin-top:0">Crie sua senha pessoal para continuar</p>
+      <div class="form-group">
+        <label class="form-label" for="troca1">Nova senha</label>
+        <input id="troca1" type="password" class="form-input" placeholder="Mín. 8 caracteres" autocomplete="new-password" maxlength="128" />
+      </div>
+      <div class="form-group">
+        <label class="form-label" for="troca2">Repita a nova senha</label>
+        <input id="troca2" type="password" class="form-input" placeholder="••••••••" autocomplete="new-password" maxlength="128" />
+      </div>
+      <div class="form-error" id="trocaError"></div>
+      <button type="submit" class="btn-login" id="trocaBtn">Salvar e entrar</button>
     </form>
 
     <hr class="login-divider" />
@@ -506,6 +522,19 @@ async function handleLogin(e) {
     }
   }
 
+  // Login individual da Equipe (e-mail e senha pelo Supabase Auth)
+  if (!client) {
+    const eq = await _loginEquipe(email, code);
+    if (eq === 'ok') return;
+    if (eq && eq.msg) {
+      err.textContent = eq.msg;
+      err.classList.add('show');
+      btn.disabled = false;
+      btn.textContent = 'Entrar';
+      return;
+    }
+  }
+
   if (client) {
     _setCLILock({ attempts: 0, lockedUntil: 0 });
     sessionStorage.setItem('falaw_session', JSON.stringify({
@@ -533,6 +562,71 @@ async function handleLogin(e) {
     btn.disabled = false;
     btn.textContent = 'Entrar';
   }
+}
+
+/* ─── Login individual da Equipe ───────────────────────────────
+   Devolve 'ok' (entrou ou está trocando a senha), {msg} (recusado com motivo)
+   ou null (não é uma conta da Equipe: segue o fluxo normal de erro). */
+async function _loginEquipe(email, senha) {
+  const url = (window.SB_URL || '').trim(), key = (window.SB_KEY || '').trim();
+  if (!url || !key || typeof supabase === 'undefined' || !window.FalawAcesso) return null;
+  let sb;
+  try { sb = supabase.createClient(url, key); } catch (e) { return null; }
+  try {
+    const { error } = await sb.auth.signInWithPassword({ email, password: senha });
+    if (error) return /banned/i.test(error.message || '') ? { msg: 'Seu acesso está desativado. Procure a administração.' } : null;
+    const r = await FalawAcesso.meuAcesso(sb);
+    const a = r.ok ? r.data : null;
+    if (!a) { await sb.auth.signOut(); return { msg: 'Esta conta não tem acesso ao painel do escritório.' }; }
+    if (!a.superadmin && !a.ativo) { await sb.auth.signOut(); return { msg: 'Seu acesso está desativado. Procure a administração.' }; }
+    let nome = 'Administração';
+    if (!a.superadmin) {
+      nome = 'Equipe';
+      try {
+        const q = await sb.from('equipe').select('nome').eq('id', a.equipe_id).limit(1);
+        if (q.data && q.data[0] && q.data[0].nome) nome = q.data[0].nome;
+      } catch (e) { /* mantém o nome genérico */ }
+    }
+    const concluir = () => {
+      sessionStorage.setItem('falaw_session', JSON.stringify({
+        id: 'equipe-' + (a.equipe_id || 'superadmin'),
+        name: nome,
+        company: 'Falaw Advogados',
+        email: email,
+        isEscritorio: true,
+        equipeId: a.equipe_id || null,
+        loginAt: new Date().toISOString()
+      }));
+      window.location.href = 'dashboard.html';
+    };
+    if (a.must_change) { _mostrarTroca(sb, concluir); return 'ok'; }
+    concluir();
+    return 'ok';
+  } catch (e) {
+    console.warn('login equipe:', e.message);
+    return null;
+  }
+}
+
+function _mostrarTroca(sb, depois) {
+  const f = document.getElementById('trocaForm');
+  const err = document.getElementById('trocaError');
+  const btn = document.getElementById('trocaBtn');
+  const msg = t => { err.textContent = t; err.classList.add('show'); };
+  document.getElementById('loginForm').style.display = 'none';
+  f.style.display = '';
+  document.getElementById('troca1').focus();
+  f.onsubmit = async ev => {
+    ev.preventDefault();
+    const a = document.getElementById('troca1').value, b = document.getElementById('troca2').value;
+    if (a.length < 8) return msg('A nova senha precisa ter pelo menos 8 caracteres.');
+    if (a !== b) return msg('As senhas não conferem.');
+    btn.disabled = true;
+    const r = await FalawAcesso.trocarSenhaPropria(sb, a);
+    btn.disabled = false;
+    if (!r.ok) return msg(r.mensagem);
+    depois();
+  };
 }
 
 // Redirect if already logged in
