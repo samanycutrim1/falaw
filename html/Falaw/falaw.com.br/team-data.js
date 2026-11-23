@@ -19,6 +19,15 @@ var FALAW_TEAM = [
     "status": "active"
   },
   {
+    "id": "mwtes4ya2edq",
+    "name": "Cristiane de Souza Pereira",
+    "sigla": "CSP",
+    "email": "cristiane@falaw.com.br",
+    "role": "Advogada",
+    "bio": "",
+    "status": "active"
+  },
+  {
     "id": "mn1yd8t2ttxy",
     "name": "Fernando Trevisan Jr.",
     "role": "Advogado",
