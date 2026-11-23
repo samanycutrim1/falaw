@@ -2688,6 +2688,13 @@ async function loadComparativo(periodId) {
   if (cachedTabBtn) await renderComparativo();
 }
 
+let _compTab = 'all', _compMode = 'valores', _compModel = null;
+
+function _compNum(v) {
+  const n = parseFloat(String(v == null ? '' : v).replace(/\./g, '').replace(',', '.'));
+  return isNaN(n) ? null : n;
+}
+
 async function renderComparativo() {
   const el = document.getElementById('comparativo-content');
   if (!el || !comparativoConfig) return;
@@ -2696,76 +2703,113 @@ async function renderComparativo() {
   if (!_compKpisA) _compKpisA = await loadKpis(comparativoConfig.periodA);
   if (!_compKpisB) _compKpisB = await loadKpis(comparativoConfig.periodB);
 
-  const periodAObj = allPeriods.find(p => p.id === comparativoConfig.periodA);
-  const periodBObj = allPeriods.find(p => p.id === comparativoConfig.periodB);
-  const labelA = periodAObj ? periodAObj.label : comparativoConfig.periodA;
-  const labelB = periodBObj ? periodBObj.label : comparativoConfig.periodB;
+  const pA = allPeriods.find(p => p.id === comparativoConfig.periodA);
+  const pB = allPeriods.find(p => p.id === comparativoConfig.periodB);
+  const labelA = pA ? pA.label : comparativoConfig.periodA;
+  const labelB = pB ? pB.label : comparativoConfig.periodB;
 
   const TAB_LABELS = {
     'visao-geral': 'Visão Geral', 'nuvem': 'Nuvem', 'op-logistico': 'Op. Logístico',
     'ex-foodlover': 'Ex-Foodlover', 'terceirizacao': 'Terceirização', 'marketplace': 'Marketplace',
   };
-
-  let html = `<div style="display:grid;grid-template-columns:1fr 1fr;gap:0;margin-bottom:24px;border:1px solid var(--border);border-radius:8px;overflow:hidden">
-    <div style="background:#0D2B5E;color:#fff;padding:14px 20px;font-family:'IBM Plex Mono',monospace;font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.05em;text-align:center">← ${escHtml(labelA)}</div>
-    <div style="background:#7B1A2E;color:#fff;padding:14px 20px;font-family:'IBM Plex Mono',monospace;font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.05em;text-align:center">${escHtml(labelB)} →</div>
-  </div>`;
-
-  const COMPARE_TABS = ['visao-geral', 'nuvem', 'op-logistico', 'ex-foodlover', 'terceirizacao', 'marketplace'];
-  for (const tabKey of COMPARE_TABS) {
+  const tabs = [];
+  for (const tabKey of Object.keys(TAB_LABELS)) {
     const kpisA = _compKpisA.filter(k => k.tab_key === tabKey && !k.chart_data);
     const kpisB = _compKpisB.filter(k => k.tab_key === tabKey && !k.chart_data);
-    if (!kpisA.length && !kpisB.length) continue;
-
-    // Build map by kpi_key for alignment
     const keys = [...new Set([...kpisA.map(k => k.kpi_key), ...kpisB.map(k => k.kpi_key)])];
-
-    html += `<div style="margin-bottom:28px">
-      <div style="font-family:'IBM Plex Mono',monospace;font-size:10px;font-weight:700;letter-spacing:.1em;text-transform:uppercase;color:var(--muted);margin-bottom:12px;padding-bottom:8px;border-bottom:1px solid var(--border)">${escHtml(TAB_LABELS[tabKey] || tabKey)}</div>
-      <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(240px,1fr));gap:12px">`;
-
+    const items = [];
     for (const key of keys) {
-      const kA = kpisA.find(k => k.kpi_key === key);
-      const kB = kpisB.find(k => k.kpi_key === key);
+      const kA = kpisA.find(k => k.kpi_key === key), kB = kpisB.find(k => k.kpi_key === key);
+      const a = kA ? _compNum(kA.value) : null, b = kB ? _compNum(kB.value) : null;
+      if (a === null && b === null) continue;
+      const unit = ((kA && kA.unit) || (kB && kB.unit) || '');
       const label = (kA || kB).label;
-      const valA = kA ? kA.value : '—';
-      const valB = kB ? kB.value : '—';
-      const unitA = kA ? (kA.unit || '') : '';
-      const unitB = kB ? (kB.unit || '') : '';
-
-      // Compute numeric delta
-      let deltaHtml = '';
-      const numA = parseFloat(String(valA).replace(/\./g, '').replace(',', '.'));
-      const numB = parseFloat(String(valB).replace(/\./g, '').replace(',', '.'));
-      if (!isNaN(numA) && !isNaN(numB) && numA !== 0) {
-        const pct = ((numB - numA) / Math.abs(numA) * 100).toFixed(1);
-        const sign = numB >= numA ? '+' : '';
-        const col = numB > numA ? '#0F9E76' : numB < numA ? '#7B1A2E' : '#666';
-        const arr = numB > numA ? '↑' : numB < numA ? '↓' : '→';
-        deltaHtml = `<div style="font-family:'IBM Plex Mono',monospace;font-size:10px;font-weight:700;color:${col};margin-top:6px">${arr} ${sign}${pct}%</div>`;
-      }
-
-      html += `<div style="border:1px solid var(--border);border-radius:8px;overflow:hidden">
-        <div style="background:#f9f8f6;padding:8px 12px;font-family:'IBM Plex Mono',monospace;font-size:9px;font-weight:700;letter-spacing:.08em;text-transform:uppercase;color:var(--muted)">${escHtml(label)}</div>
-        <div style="display:grid;grid-template-columns:1fr 1fr;gap:0">
-          <div style="padding:12px;border-right:1px solid var(--border);background:#EEF3FF">
-            <div style="font-size:9px;color:#0D2B5E;font-weight:700;margin-bottom:4px;font-family:'IBM Plex Mono',monospace;text-transform:uppercase">${escHtml(labelA)}</div>
-            <div style="font-family:'Playfair Display',serif;font-size:22px;font-weight:700;color:#0D2B5E;line-height:1">${escHtml(valA)}</div>
-            ${unitA ? `<div style="font-size:10px;color:var(--muted);margin-top:3px">${escHtml(unitA)}</div>` : ''}
-          </div>
-          <div style="padding:12px;background:#FFF5F6">
-            <div style="font-size:9px;color:#7B1A2E;font-weight:700;margin-bottom:4px;font-family:'IBM Plex Mono',monospace;text-transform:uppercase">${escHtml(labelB)}</div>
-            <div style="font-family:'Playfair Display',serif;font-size:22px;font-weight:700;color:#7B1A2E;line-height:1">${escHtml(valB)}</div>
-            ${unitB ? `<div style="font-size:10px;color:var(--muted);margin-top:3px">${escHtml(unitB)}</div>` : ''}
-          </div>
-        </div>
-        ${deltaHtml ? `<div style="padding:8px 12px;border-top:1px solid var(--border);background:#f9f8f6">${deltaHtml}</div>` : ''}
-      </div>`;
+      const isPct = unit.includes('%') || /^taxa|%/i.test(label);
+      const pct = (a !== null && b !== null && a !== 0) ? (b - a) / Math.abs(a) * 100 : null;
+      items.push({ key, label, a, b, unit, isPct, pct });
     }
-    html += `</div></div>`;
+    if (items.length) tabs.push({ tabKey, name: TAB_LABELS[tabKey], items });
   }
+  _compModel = { labelA, labelB, tabs };
+  if (_compTab !== 'all' && !tabs.some(t => t.tabKey === _compTab)) _compTab = 'all';
+  drawComparativo();
+}
 
-  el.innerHTML = html || '<div class="analysis-empty">Nenhum KPI encontrado para comparação.</div>';
+function setCompTab(k) { _compTab = k; drawComparativo(); }
+function setCompMode(m) { _compMode = m; drawComparativo(); }
+
+function drawComparativo() {
+  const el = document.getElementById('comparativo-content');
+  if (!el || !_compModel) return;
+  const { labelA, labelB, tabs } = _compModel;
+  if (!tabs.length) { el.innerHTML = '<div class="analysis-empty">Nenhum KPI encontrado para comparação.</div>'; return; }
+
+  // destrói gráficos anteriores
+  Object.keys(chartInstances).filter(k => k.startsWith('comp-')).forEach(k => { chartInstances[k].destroy(); delete chartInstances[k]; });
+
+  const mono = "font-family:'IBM Plex Mono',monospace";
+  const chip = (active, onclick, txt) => `<button onclick="${onclick}" style="${mono};font-size:10px;font-weight:700;letter-spacing:.06em;text-transform:uppercase;padding:7px 14px;border-radius:999px;cursor:pointer;border:1px solid ${active ? '#0D2B5E' : 'var(--border)'};background:${active ? '#0D2B5E' : '#fff'};color:${active ? '#fff' : 'var(--muted)'}">${txt}</button>`;
+
+  const shown = _compTab === 'all' ? tabs : tabs.filter(t => t.tabKey === _compTab);
+  const all = tabs.flatMap(t => t.items).filter(i => i.pct !== null);
+  const up = all.filter(i => i.pct > 0.05).length, down = all.filter(i => i.pct < -0.05).length, flat = all.length - up - down;
+
+  let html = `<div style="display:grid;grid-template-columns:1fr 1fr;margin-bottom:18px;border:1px solid var(--border);border-radius:8px;overflow:hidden">
+    <div style="background:#0D2B5E;color:#fff;padding:12px 20px;${mono};font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.05em;text-align:center">${escHtml(labelA)}</div>
+    <div style="background:#7B1A2E;color:#fff;padding:12px 20px;${mono};font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.05em;text-align:center">${escHtml(labelB)}</div>
+  </div>
+  <div style="display:flex;flex-wrap:wrap;gap:10px;margin-bottom:16px">
+    <div style="flex:1;min-width:140px;border:1px solid var(--border);border-radius:8px;padding:12px 16px;background:#fff"><div style="${mono};font-size:9px;color:var(--muted);text-transform:uppercase;font-weight:700">Indicadores em alta</div><div style="font-family:'Playfair Display',serif;font-size:26px;font-weight:700;color:#0F9E76">↑ ${up}</div></div>
+    <div style="flex:1;min-width:140px;border:1px solid var(--border);border-radius:8px;padding:12px 16px;background:#fff"><div style="${mono};font-size:9px;color:var(--muted);text-transform:uppercase;font-weight:700">Indicadores em queda</div><div style="font-family:'Playfair Display',serif;font-size:26px;font-weight:700;color:#7B1A2E">↓ ${down}</div></div>
+    <div style="flex:1;min-width:140px;border:1px solid var(--border);border-radius:8px;padding:12px 16px;background:#fff"><div style="${mono};font-size:9px;color:var(--muted);text-transform:uppercase;font-weight:700">Estáveis</div><div style="font-family:'Playfair Display',serif;font-size:26px;font-weight:700;color:#666">→ ${flat}</div></div>
+  </div>
+  <div style="display:flex;flex-wrap:wrap;gap:8px;align-items:center;justify-content:space-between;margin-bottom:20px">
+    <div style="display:flex;flex-wrap:wrap;gap:6px">${chip(_compTab === 'all', "setCompTab('all')", 'Todas')}${tabs.map(t => chip(_compTab === t.tabKey, `setCompTab('${t.tabKey}')`, escHtml(t.name))).join('')}</div>
+    <div style="display:flex;gap:6px">${chip(_compMode === 'valores', "setCompMode('valores')", 'Valores')}${chip(_compMode === 'variacao', "setCompMode('variacao')", 'Variação %')}</div>
+  </div>`;
+
+  const cards = [];
+  for (const t of shown) {
+    if (_compMode === 'variacao') {
+      const its = t.items.filter(i => i.pct !== null);
+      if (its.length) cards.push({ id: `comp-${t.tabKey}-v`, title: `${t.name} — variação % (${labelA} → ${labelB})`, kind: 'var', items: its, wide: true });
+    } else {
+      const counts = t.items.filter(i => !i.isPct), pcts = t.items.filter(i => i.isPct);
+      if (counts.length) cards.push({ id: `comp-${t.tabKey}-c`, title: `${t.name} — quantidades`, kind: 'val', items: counts, wide: !pcts.length });
+      if (pcts.length) cards.push({ id: `comp-${t.tabKey}-p`, title: `${t.name} — taxas (%)`, kind: 'val', items: pcts, pct: true, wide: !counts.length });
+    }
+  }
+  html += `<div class="charts-grid">` + cards.map(c => {
+    const h = Math.max(220, c.items.length * (c.kind === 'var' ? 34 : 46) + 70);
+    return `<div class="chart-card${c.wide ? ' wide' : ''}"><div class="chart-card-title">${escHtml(c.title)}</div><div class="chart-wrap" style="height:${h}px"><canvas id="${c.id}"></canvas></div></div>`;
+  }).join('') + `</div>`;
+  el.innerHTML = html;
+
+  if (typeof Chart === 'undefined') return;
+  const short = s => s.length > 26 ? s.slice(0, 25) + '…' : s;
+  for (const c of cards) {
+    const labels = c.items.map(i => short(i.label));
+    let cfg;
+    if (c.kind === 'var') {
+      cfg = { type: 'bar', data: { labels, datasets: [{ data: c.items.map(i => +i.pct.toFixed(1)),
+        backgroundColor: c.items.map(i => i.pct >= 0 ? '#0F9E76' : '#7B1A2E'), borderRadius: 3 }] },
+        options: { indexAxis: 'y', responsive: true, maintainAspectRatio: false,
+          plugins: { legend: { display: false }, tooltip: { callbacks: { label: x => ` ${x.parsed.x > 0 ? '+' : ''}${x.parsed.x}%` } } },
+          scales: { x: { ticks: { callback: v => v + '%' }, grid: { color: 'rgba(0,0,0,.06)' } }, y: { grid: { display: false } } } } };
+    } else {
+      const sfx = c.pct ? '%' : '';
+      cfg = { type: 'bar', data: { labels, datasets: [
+        { label: labelA, data: c.items.map(i => i.a), backgroundColor: '#0D2B5E', borderRadius: 3 },
+        { label: labelB, data: c.items.map(i => i.b), backgroundColor: '#7B1A2E', borderRadius: 3 } ] },
+        options: { indexAxis: 'y', responsive: true, maintainAspectRatio: false,
+          interaction: { mode: 'index', intersect: false },
+          plugins: { legend: { position: 'bottom' }, tooltip: { callbacks: {
+            afterBody: ctx => { const i = c.items[ctx[0].dataIndex]; return i.pct === null ? '' : `Variação: ${i.pct > 0 ? '+' : ''}${i.pct.toFixed(1)}%`; },
+            label: x => ` ${x.dataset.label}: ${x.parsed.x}${sfx}` } } },
+          scales: { x: { beginAtZero: true, ticks: { callback: v => v + sfx }, grid: { color: 'rgba(0,0,0,.06)' } }, y: { grid: { display: false } } } } };
+    }
+    try { chartInstances[c.id] = new Chart(document.getElementById(c.id), cfg); } catch (e) { console.warn('comp chart', e); }
+  }
 }
 
 /* ═══════════════════════════════════════════════════════════

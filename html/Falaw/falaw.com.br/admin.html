@@ -14803,7 +14803,7 @@ function _xlPadraoKpiRow(periodId, padraoData, sortOrder) {
   };
 }
 
-function _xlBuildKpiRows(periodId, records, decisoes, novos, suspensos1389, suspensos1391, suspensos300, decisoesTabela, julgadoresData, encerradosData, valoresElevadosData, prevPeriodData, acordosData, suspensos59, padraoData) {
+function _xlBuildKpiRows(periodId, records, decisoes, novos, suspensos1389, suspensos1391, suspensos300, decisoesTabela, julgadoresData, encerradosData, valoresElevadosData, prevPeriodData, acordosData, suspensos59, padraoData, periodMonthYear) {
   // decisoesTabela: decisões do arquivo separado — aparecem apenas nas tabelas, não nos contadores
   // julgadoresData: linhas da aba Julgadores — usadas para table_fund_vg
   decisoesTabela    = decisoesTabela    || [];
@@ -14899,6 +14899,22 @@ function _xlBuildKpiRows(periodId, records, decisoes, novos, suspensos1389, susp
       _byMonthCR[crKey] = _byMonthCR[crKey] || {};
       _byMonthCR[crKey][mo] = (_byMonthCR[crKey][mo]||0) + 1;
     });
+    // Mês do período em upload: se a aba IFOOD ainda não traz os casos novos com data de
+    // distribuição, completa com a contagem da aba "Novos Casos" para o mês aparecer no gráfico.
+    {
+      const pm = String(periodMonthYear||'').match(/^(\d{4})-(\d{1,2})/);
+      if (pm && pm[1] === '2026') {
+        const pmo = parseInt(pm[2],10);
+        for (const cr of Object.keys(novosByCR)) {
+          const falta = (Number(novosByCR[cr])||0) - ((_byMonthCR[cr]||{})[pmo]||0);
+          if (falta > 0) {
+            _byMonthCR[cr] = _byMonthCR[cr] || {};
+            _byMonthCR[cr][pmo] = (_byMonthCR[cr][pmo]||0) + falta;
+            _byMonthAll[pmo] = (_byMonthAll[pmo]||0) + falta;
+          }
+        }
+      }
+    }
     const _months = Object.keys(_byMonthAll).map(Number).sort((a,b)=>a-b);
     if(_months.length >= 1) {
       const _labels = _months.map(m => _MONTHS_LABELS[m-1]);
@@ -15718,8 +15734,10 @@ async function ifoodSaveExcel() {
 
     // Buscar dados do período anterior para comparativo de metas
     let prevPeriodData = null;
+    let periodMonthYear = '';
     try {
       const { data: allPds } = await ifoodApi('/api/ifood/periods');
+      if (Array.isArray(allPds)) periodMonthYear = ((allPds.find(p => p.id === periodId)) || {}).month_year || '';
       if (Array.isArray(allPds) && allPds.length > 1) {
         const sorted = allPds.filter(p => p.id !== periodId).sort((a,b) => (b.month_year||'').localeCompare(a.month_year||''));
         const prev = sorted[0];
@@ -15808,7 +15826,7 @@ async function ifoodSaveExcel() {
       } catch (e) { console.warn('padrão decisório existente:', e.message); }
     }
 
-    const kpiRows = _xlBuildKpiRows(periodId, records, decisoes, novos, susp1389, susp1291, susp300, decisoesTabela, julgadoresData, encerradosData, valoresElevadosData, prevPeriodData, acordosData, susp59, padraoData);
+    const kpiRows = _xlBuildKpiRows(periodId, records, decisoes, novos, susp1389, susp1291, susp300, decisoesTabela, julgadoresData, encerradosData, valoresElevadosData, prevPeriodData, acordosData, susp59, padraoData, periodMonthYear);
 
     // Upload do arquivo Excel bruto para Cockroach (quando API configurada)
     let ifoodExcelFileUrl = null;
