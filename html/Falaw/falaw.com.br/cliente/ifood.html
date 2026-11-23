@@ -2688,7 +2688,7 @@ async function loadComparativo(periodId) {
   if (cachedTabBtn) await renderComparativo();
 }
 
-let _compTab = 'all', _compMode = 'valores', _compModel = null;
+let _compTab = 'all', _compModel = null;
 
 function _compNum(v) {
   const n = parseFloat(String(v == null ? '' : v).replace(/\./g, '').replace(',', '.'));
@@ -2741,7 +2741,35 @@ async function renderComparativo() {
 }
 
 function setCompTab(k) { _compTab = k; drawComparativo(); }
-function setCompMode(m) { _compMode = m; drawComparativo(); }
+
+function _compNice(m) {
+  const p = Math.pow(10, Math.floor(Math.log10(m || 1)));
+  for (const s of [1, 2, 2.5, 5, 10]) if (s * p >= m) return s * p;
+  return m;
+}
+const _compFmt = v => Number(v).toLocaleString('pt-BR');
+
+function _compCard(it, labelA, labelB) {
+  const mono = "font-family:'IBM Plex Mono',monospace";
+  const a = it.a || 0, b = it.b || 0;
+  const max = it.isPct ? 100 : _compNice(Math.max(a, b) * 1.05);
+  const h = v => Math.max(2, v / max * 100);
+  const d = it.pct;
+  const cls = d === null ? '#666' : d > 0.05 ? '#0F9E76' : d < -0.05 ? '#7B1A2E' : '#666';
+  const arrow = d === null ? '' : d > 0.05 ? '↑' : d < -0.05 ? '↓' : '→';
+  const sfx = it.isPct ? '%' : '';
+  const col = (v, c, m, raw) => `<div class="th-col">
+    <div class="th-val" style="color:${c}">${raw === null ? '—' : _compFmt(v) + sfx}</div>
+    <div class="th-tube"><div class="th-fill" style="background:${c}" data-h="${raw === null ? 0 : h(v)}"></div></div>
+    <div class="th-bulb" style="background:${c}"></div>
+    <div class="th-mo" style="color:${c}">${escHtml(m)}</div></div>`;
+  return `<div class="th-card">
+    <div class="th-lbl">${escHtml(it.label)}</div>
+    <div class="th-row">${col(a, '#0D2B5E', labelA, it.a)}${col(b, '#7B1A2E', labelB, it.b)}
+      <div class="th-scale"><span>${it.isPct ? '100%' : _compFmt(max)}</span><span>${it.isPct ? '50%' : _compFmt(max / 2)}</span><span>0</span></div></div>
+    <div class="th-delta" style="${mono};color:${cls}">${d === null ? '—' : `${arrow} ${d > 0 ? '+' : ''}${d.toFixed(1)}%`}</div>
+  </div>`;
+}
 
 function drawComparativo() {
   const el = document.getElementById('comparativo-content');
@@ -2749,74 +2777,41 @@ function drawComparativo() {
   const { labelA, labelB, tabs } = _compModel;
   if (!tabs.length) { el.innerHTML = '<div class="analysis-empty">Nenhum KPI encontrado para comparação.</div>'; return; }
 
-  // destrói gráficos anteriores
-  Object.keys(chartInstances).filter(k => k.startsWith('comp-')).forEach(k => { chartInstances[k].destroy(); delete chartInstances[k]; });
-
   const mono = "font-family:'IBM Plex Mono',monospace";
   const chip = (active, onclick, txt) => `<button onclick="${onclick}" style="${mono};font-size:10px;font-weight:700;letter-spacing:.06em;text-transform:uppercase;padding:7px 14px;border-radius:999px;cursor:pointer;border:1px solid ${active ? '#0D2B5E' : 'var(--border)'};background:${active ? '#0D2B5E' : '#fff'};color:${active ? '#fff' : 'var(--muted)'}">${txt}</button>`;
-
   const shown = _compTab === 'all' ? tabs : tabs.filter(t => t.tabKey === _compTab);
   const all = tabs.flatMap(t => t.items).filter(i => i.pct !== null);
   const up = all.filter(i => i.pct > 0.05).length, down = all.filter(i => i.pct < -0.05).length, flat = all.length - up - down;
+  const stat = (t, n, c, ar) => `<div style="flex:1;min-width:140px;border:1px solid var(--border);border-radius:8px;padding:12px 16px;background:#fff"><div style="${mono};font-size:9px;color:var(--muted);text-transform:uppercase;font-weight:700">${t}</div><div style="font-family:'Playfair Display',serif;font-size:26px;font-weight:700;color:${c}">${ar} ${n}</div></div>`;
 
-  let html = `<div style="display:grid;grid-template-columns:1fr 1fr;margin-bottom:18px;border:1px solid var(--border);border-radius:8px;overflow:hidden">
+  let html = `<style>
+    .th-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(210px,1fr));gap:12px}
+    .th-card{background:#faf9f7;border:1px solid var(--border);border-radius:8px;padding:14px 14px 12px;min-width:0}
+    .th-lbl{font-family:'IBM Plex Mono',monospace;font-size:9px;font-weight:700;letter-spacing:.08em;text-transform:uppercase;color:var(--muted);min-height:24px}
+    .th-row{display:flex;justify-content:center;gap:30px;margin:10px 0 8px;position:relative}
+    .th-col{display:flex;flex-direction:column;align-items:center;width:46px}
+    .th-val{font-family:'Playfair Display',serif;font-weight:700;font-size:22px;line-height:1;margin-bottom:8px;white-space:nowrap}
+    .th-tube{position:relative;width:18px;height:130px;background:#e8e4df;border-radius:9px 9px 0 0;overflow:hidden}
+    .th-fill{position:absolute;left:0;right:0;bottom:0;height:0;transition:height .9s cubic-bezier(.2,.8,.2,1)}
+    .th-bulb{width:34px;height:34px;border-radius:50%;margin-top:-6px;box-shadow:inset 0 0 0 4px #faf9f7}
+    .th-mo{font-family:'IBM Plex Mono',monospace;font-size:9px;font-weight:700;text-transform:uppercase;margin-top:4px;white-space:nowrap}
+    .th-scale{position:absolute;left:50%;top:30px;height:130px;transform:translateX(-50%);display:flex;flex-direction:column;justify-content:space-between;font-family:'IBM Plex Mono',monospace;font-size:8px;color:var(--muted);text-align:center;pointer-events:none;width:34px}
+    .th-scale span{background:#faf9f7;line-height:1}
+    .th-delta{font-size:10px;font-weight:700;margin-top:10px;padding-top:8px;border-top:1px solid var(--border)}
+  </style>
+  <div style="display:grid;grid-template-columns:1fr 1fr;margin-bottom:18px;border:1px solid var(--border);border-radius:8px;overflow:hidden">
     <div style="background:#0D2B5E;color:#fff;padding:12px 20px;${mono};font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.05em;text-align:center">${escHtml(labelA)}</div>
     <div style="background:#7B1A2E;color:#fff;padding:12px 20px;${mono};font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.05em;text-align:center">${escHtml(labelB)}</div>
   </div>
-  <div style="display:flex;flex-wrap:wrap;gap:10px;margin-bottom:16px">
-    <div style="flex:1;min-width:140px;border:1px solid var(--border);border-radius:8px;padding:12px 16px;background:#fff"><div style="${mono};font-size:9px;color:var(--muted);text-transform:uppercase;font-weight:700">Indicadores em alta</div><div style="font-family:'Playfair Display',serif;font-size:26px;font-weight:700;color:#0F9E76">↑ ${up}</div></div>
-    <div style="flex:1;min-width:140px;border:1px solid var(--border);border-radius:8px;padding:12px 16px;background:#fff"><div style="${mono};font-size:9px;color:var(--muted);text-transform:uppercase;font-weight:700">Indicadores em queda</div><div style="font-family:'Playfair Display',serif;font-size:26px;font-weight:700;color:#7B1A2E">↓ ${down}</div></div>
-    <div style="flex:1;min-width:140px;border:1px solid var(--border);border-radius:8px;padding:12px 16px;background:#fff"><div style="${mono};font-size:9px;color:var(--muted);text-transform:uppercase;font-weight:700">Estáveis</div><div style="font-family:'Playfair Display',serif;font-size:26px;font-weight:700;color:#666">→ ${flat}</div></div>
-  </div>
-  <div style="display:flex;flex-wrap:wrap;gap:8px;align-items:center;justify-content:space-between;margin-bottom:20px">
-    <div style="display:flex;flex-wrap:wrap;gap:6px">${chip(_compTab === 'all', "setCompTab('all')", 'Todas')}${tabs.map(t => chip(_compTab === t.tabKey, `setCompTab('${t.tabKey}')`, escHtml(t.name))).join('')}</div>
-    <div style="display:flex;gap:6px">${chip(_compMode === 'valores', "setCompMode('valores')", 'Valores')}${chip(_compMode === 'variacao', "setCompMode('variacao')", 'Variação %')}</div>
-  </div>`;
+  <div style="display:flex;flex-wrap:wrap;gap:10px;margin-bottom:16px">${stat('Indicadores em alta', up, '#0F9E76', '↑')}${stat('Indicadores em queda', down, '#7B1A2E', '↓')}${stat('Estáveis', flat, '#666', '→')}</div>
+  <div style="display:flex;flex-wrap:wrap;gap:6px;margin-bottom:20px">${chip(_compTab === 'all', "setCompTab('all')", 'Todas')}${tabs.map(t => chip(_compTab === t.tabKey, `setCompTab('${t.tabKey}')`, escHtml(t.name))).join('')}</div>`;
 
-  const cards = [];
   for (const t of shown) {
-    if (_compMode === 'variacao') {
-      const its = t.items.filter(i => i.pct !== null);
-      if (its.length) cards.push({ id: `comp-${t.tabKey}-v`, title: `${t.name} — variação % (${labelA} → ${labelB})`, kind: 'var', items: its, wide: true });
-    } else {
-      const big = t.items.filter(i => !i.isPct && Math.max(i.a || 0, i.b || 0) >= 500);
-      const counts = t.items.filter(i => !i.isPct && !big.includes(i)), pcts = t.items.filter(i => i.isPct);
-      if (big.length) cards.push({ id: `comp-${t.tabKey}-t`, title: `${t.name} — totais`, kind: 'val', items: big, wide: false });
-      if (counts.length) cards.push({ id: `comp-${t.tabKey}-c`, title: `${t.name} — quantidades`, kind: 'val', items: counts, wide: !pcts.length });
-      if (pcts.length) cards.push({ id: `comp-${t.tabKey}-p`, title: `${t.name} — taxas (%)`, kind: 'val', items: pcts, pct: true, wide: !counts.length });
-    }
+    html += `<div style="margin-bottom:26px"><div style="${mono};font-size:10px;font-weight:700;letter-spacing:.1em;text-transform:uppercase;color:var(--muted);margin-bottom:12px;padding-bottom:8px;border-bottom:1px solid var(--border)">${escHtml(t.name)}</div>
+      <div class="th-grid">${t.items.map(it => _compCard(it, labelA, labelB)).join('')}</div></div>`;
   }
-  html += `<div class="charts-grid">` + cards.map(c => {
-    const h = Math.max(220, c.items.length * (c.kind === 'var' ? 34 : 46) + 70);
-    return `<div class="chart-card${c.wide ? ' wide' : ''}"><div class="chart-card-title">${escHtml(c.title)}</div><div class="chart-wrap" style="height:${h}px"><canvas id="${c.id}"></canvas></div></div>`;
-  }).join('') + `</div>`;
   el.innerHTML = html;
-
-  if (typeof Chart === 'undefined') return;
-  const short = s => s.length > 26 ? s.slice(0, 25) + '…' : s;
-  for (const c of cards) {
-    const labels = c.items.map(i => short(i.label));
-    let cfg;
-    if (c.kind === 'var') {
-      cfg = { type: 'bar', data: { labels, datasets: [{ data: c.items.map(i => +i.pct.toFixed(1)),
-        backgroundColor: c.items.map(i => i.pct >= 0 ? '#0F9E76' : '#7B1A2E'), borderRadius: 3 }] },
-        options: { indexAxis: 'y', responsive: true, maintainAspectRatio: false,
-          plugins: { legend: { display: false }, tooltip: { callbacks: { label: x => ` ${x.parsed.x > 0 ? '+' : ''}${x.parsed.x}%` } } },
-          scales: { x: { ticks: { callback: v => v + '%' }, grid: { color: 'rgba(0,0,0,.06)' } }, y: { grid: { display: false } } } } };
-    } else {
-      const sfx = c.pct ? '%' : '';
-      cfg = { type: 'bar', data: { labels, datasets: [
-        { label: labelA, data: c.items.map(i => i.a), backgroundColor: '#0D2B5E', borderRadius: 3 },
-        { label: labelB, data: c.items.map(i => i.b), backgroundColor: '#7B1A2E', borderRadius: 3 } ] },
-        options: { indexAxis: 'y', responsive: true, maintainAspectRatio: false,
-          interaction: { mode: 'index', intersect: false },
-          plugins: { legend: { position: 'bottom' }, tooltip: { callbacks: {
-            afterBody: ctx => { const i = c.items[ctx[0].dataIndex]; return i.pct === null ? '' : `Variação: ${i.pct > 0 ? '+' : ''}${i.pct.toFixed(1)}%`; },
-            label: x => ` ${x.dataset.label}: ${x.parsed.x}${sfx}` } } },
-          scales: { x: { beginAtZero: true, ticks: { callback: v => v + sfx }, grid: { color: 'rgba(0,0,0,.06)' } }, y: { grid: { display: false } } } } };
-    }
-    try { chartInstances[c.id] = new Chart(document.getElementById(c.id), cfg); } catch (e) { console.warn('comp chart', e); }
-  }
+  requestAnimationFrame(() => requestAnimationFrame(() => el.querySelectorAll('.th-fill').forEach(f => f.style.height = f.dataset.h + '%')));
 }
 
 /* ═══════════════════════════════════════════════════════════
