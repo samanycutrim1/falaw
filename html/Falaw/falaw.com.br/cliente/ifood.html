@@ -2714,8 +2714,13 @@ async function renderComparativo() {
   };
   const tabs = [];
   for (const tabKey of Object.keys(TAB_LABELS)) {
-    const kpisA = _compKpisA.filter(k => k.tab_key === tabKey && !k.chart_data);
-    const kpisB = _compKpisB.filter(k => k.tab_key === tabKey && !k.chart_data);
+    // Mesmo critério dos cards do relatório: sem gráficos, sem auxiliares de meta e sem valor vazio/zero
+    const _hid = ['meta_dec_','meta_fav_','meta_pct_','meta_m1_','meta_m2_','meta_m3_','meta_m4_'];
+    const _vis = k => k.tab_key === tabKey && !k.chart_data
+      && !_hid.some(p => (k.kpi_key || '').startsWith(p))
+      && !['', '0', '0,0', '0.0'].includes(String(k.value ?? '').trim());
+    const kpisA = _compKpisA.filter(_vis);
+    const kpisB = _compKpisB.filter(_vis);
     const keys = [...new Set([...kpisA.map(k => k.kpi_key), ...kpisB.map(k => k.kpi_key)])];
     const items = [];
     for (const key of keys) {
@@ -2774,7 +2779,9 @@ function drawComparativo() {
       const its = t.items.filter(i => i.pct !== null);
       if (its.length) cards.push({ id: `comp-${t.tabKey}-v`, title: `${t.name} — variação % (${labelA} → ${labelB})`, kind: 'var', items: its, wide: true });
     } else {
-      const counts = t.items.filter(i => !i.isPct), pcts = t.items.filter(i => i.isPct);
+      const big = t.items.filter(i => !i.isPct && Math.max(i.a || 0, i.b || 0) >= 500);
+      const counts = t.items.filter(i => !i.isPct && !big.includes(i)), pcts = t.items.filter(i => i.isPct);
+      if (big.length) cards.push({ id: `comp-${t.tabKey}-t`, title: `${t.name} — totais`, kind: 'val', items: big, wide: false });
       if (counts.length) cards.push({ id: `comp-${t.tabKey}-c`, title: `${t.name} — quantidades`, kind: 'val', items: counts, wide: !pcts.length });
       if (pcts.length) cards.push({ id: `comp-${t.tabKey}-p`, title: `${t.name} — taxas (%)`, kind: 'val', items: pcts, pct: true, wide: !counts.length });
     }
